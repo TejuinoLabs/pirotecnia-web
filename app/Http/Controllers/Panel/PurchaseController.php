@@ -2,19 +2,23 @@
 
 namespace App\Http\Controllers\Panel;
 
+use App\Core\UseCases\Purchases\GetPurchaseCatalog;
+use App\Core\UseCases\Purchases\StorePurchase;
 use App\Http\Controllers\Controller;
-use App\Models\Product;
+use App\Http\Requests\Panel\StorePurchaseRequest;
 use App\Models\Purchase;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 class PurchaseController extends Controller
 {
-    //
+    public function __construct(
+        private GetPurchaseCatalog $getPurchaseCatalog,
+        private StorePurchase $storePurchase,
+    ) {}
 
     public function index()
     {
-        $purchases = Purchase::with('products')
+        $purchases = Purchase::with(['products', 'equipments'])
             ->latest('date')
             ->latest('id')
             ->get();
@@ -25,26 +29,28 @@ class PurchaseController extends Controller
 
     public function create()
     {
-        $products = Product::all();
+        $catalog = $this->getPurchaseCatalog->execute();
+        $products = $catalog['products'];
+        $materials = $catalog['materials'];
+        $equipments = $catalog['equipments'];
 
-        return view('panel.purchases.create', compact('products'));
+        return view('panel.purchases.create', compact('products', 'materials', 'equipments'));
     }
 
-    public function store(Request $request)
+    public function store(StorePurchaseRequest $request)
     {
-        // create purchase and update inventory
-        // create purchase
-        $purchase = Purchase::create([
-            'user_id' => Auth::user()->id,
-            'date' => $request->date,
-        ]);
-        // update inventory
-        foreach ($request->products as $product) {
-            $purchase->products()->attach($product['product_id'], [
-                'quantity' => $product['quantity'],
-                'price' => $product['price'],
-            ]);
+        $purchase = $this->storePurchase->execute(
+            $request->toEntity($request->user()->id)
+        );
+        if (! $purchase) {
+            return back()
+                ->withInput()
+                ->withErrors(['purchase' => 'No se pudo guardar la compra. Revisa los conceptos e intenta de nuevo.']);
         }
+
+        return redirect()
+            ->route('purchases.index')
+            ->with('success', 'Compra registrada correctamente.');
     }
 
     public function show($id)

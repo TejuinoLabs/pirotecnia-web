@@ -41,4 +41,11 @@ class Equipment extends Model
             ->withPivot(['quantity', 'check_employee', 'check_almacen'])
             ->withTimestamps();
     }
+
+    public function purchases(): BelongsToMany
+    {
+        return $this->belongsToMany(Purchase::class)
+            ->withPivot(['quantity', 'price'])
+            ->withTimestamps();
+    }
 }

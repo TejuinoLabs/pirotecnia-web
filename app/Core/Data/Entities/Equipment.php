@@ -31,7 +31,7 @@ class Equipment
             'name' => $equipment->name,
             'description' => $equipment->description,
             'unit' => $equipment->unit,
-            'quantity' => $equipment->pivot->quantity,
+            'quantity' => $equipment->pivot?->quantity ?? 0,
         ]);
     }
 }

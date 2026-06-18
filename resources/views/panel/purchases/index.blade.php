@@ -29,7 +29,7 @@
 
         $purchaseRows = $purchases
             ->map(function ($purchase) {
-                $lineItems = $purchase->products
+                $productItems = $purchase->products
                     ->map(function ($product) {
                         $quantity = (float) ($product->pivot->quantity ?? 0);
                         $price = (float) ($product->pivot->price ?? 0);
@@ -42,6 +42,20 @@
                         ];
                     })
                     ->values();
+                $equipmentItems = $purchase->equipments
+                    ->map(function ($equipment) {
+                        $quantity = (float) ($equipment->pivot->quantity ?? 0);
+                        $price = (float) ($equipment->pivot->price ?? 0);
+                        return [
+                            'name' => $equipment->name,
+                            'quantity' => $quantity,
+                            'price' => $price,
+                            'total' => $quantity * $price,
+                        ];
+                    })
+                    ->values();
+
+                $lineItems = collect($productItems->all())->merge($equipmentItems)->values();
 
                 $summary = $lineItems
                     ->take(2)
@@ -53,6 +67,13 @@
                                 : number_format((float) $item['quantity'], 2));
                     })
                     ->implode(', ');
+                $subtotal = (float) $lineItems->sum('total');
+                $discount = (bool) ($purchase->discount_enabled ?? false)
+                    ? $subtotal * ((float) ($purchase->discount_rate ?? 0) / 100)
+                    : 0;
+                $tax = (bool) ($purchase->iva_enabled ?? false)
+                    ? ($subtotal - $discount) * ((float) ($purchase->iva_rate ?? 0) / 100)
+                    : 0;
 
                 return [
                     'id' => $purchase->id,
@@ -61,8 +82,8 @@
                     'line_items' => $lineItems,
                     'product_count' => $lineItems->count(),
                     'units' => (float) $lineItems->sum('quantity'),
-                    'total' => (float) $lineItems->sum('total'),
-                    'summary' => $summary !== '' ? $summary : 'Sin productos registrados',
+                    'total' => max($subtotal - $discount + $tax, 0),
+                    'summary' => $summary !== '' ? $summary : 'Sin conceptos registrados',
                     'remaining_products' => max($lineItems->count() - 2, 0),
                 ];
             })
@@ -364,7 +385,8 @@
                                             <div class="font-mono text-sm font-semibold text-primary">
                                                 {{ $purchase['folio'] }}</div>
                                         </td>
-                                        <td class="px-6 py-5 text-sm text-muted" data-label="Fecha">{{ $purchase['date']->format('d/m/Y') }}
+                                        <td class="px-6 py-5 text-sm text-muted" data-label="Fecha">
+                                            {{ $purchase['date']->format('d/m/Y') }}
                                         </td>
                                         <td class="px-6 py-5" data-label="Detalle">
                                             <p class="text-sm font-semibold text-on-surface">{{ $purchase['summary'] }}
@@ -385,7 +407,8 @@
                                         <td class="px-6 py-5 text-sm font-semibold text-on-surface" data-label="Unidades">
                                             {{ $formatQuantity($purchase['units']) }}
                                         </td>
-                                        <td class="px-6 py-5 text-right text-sm font-bold text-on-surface" data-label="Monto">
+                                        <td class="px-6 py-5 text-right text-sm font-bold text-on-surface"
+                                            data-label="Monto">
                                             {{ $formatCurrency($purchase['total']) }}
                                         </td>
                                     </tr>

@@ -11,7 +11,7 @@ class ProductService
     public function all(): Collection
     {
         try {
-            $eloquentProducts = ModelsProduct::all();
+            $eloquentProducts = ModelsProduct::with('inventories')->orderBy('name')->get();
             $products = $eloquentProducts->map(function ($eloquentProduct) {
                 return Product::fromProduct($eloquentProduct);
             });

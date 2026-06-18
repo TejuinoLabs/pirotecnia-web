@@ -68,7 +68,7 @@ class Product
             return (float) ($product->pivot->price ?? 0);
         }
 
-        return $product->inventories->first()->pivot->price ?? 0;
+        return $product->inventories->first()?->pivot?->price ?? 0;
     }
 
     private static function extractQuantityFrom($product, $from)
@@ -77,6 +77,6 @@ class Product
             return $product->pivot->quantity;
         }
 
-        return $product->inventories->first()->pivot->quantity;
+        return $product->inventories->first()?->pivot?->quantity ?? 0;
     }
 }
