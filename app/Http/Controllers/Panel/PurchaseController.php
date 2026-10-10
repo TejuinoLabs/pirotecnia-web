@@ -2,86 +2,63 @@
 
 namespace App\Http\Controllers\Panel;
 
-use App\Core\UseCases\Purchases\GetPurchaseCatalog;
-use App\Core\UseCases\Purchases\StorePurchase;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Panel\StorePurchaseRequest;
-use App\Models\Purchase;
+use App\Services\Panel\InventoryPanelView;
+use App\Services\Inventory\InventoryAccess;
+use App\Services\Inventory\InventoryData;
 use Illuminate\Http\Request;
 
 class PurchaseController extends Controller
 {
-    public function __construct(
-        private GetPurchaseCatalog $getPurchaseCatalog,
-        private StorePurchase $storePurchase,
-    ) {}
-
-    public function index()
+    public function index(Request $request, InventoryPanelView $panel)
     {
-        $purchases = Purchase::with(['products', 'equipments'])
-            ->latest('date')
-            ->latest('id')
-            ->get();
-        $itemActive = 6;
-
-        return view('panel.purchases.index', compact('purchases', 'itemActive'));
+        return $panel->render($request, 'purchases', 'purchases');
     }
 
-    public function create()
+    public function create(Request $request, InventoryPanelView $panel)
     {
-        $catalog = $this->getPurchaseCatalog->execute();
-        $products = $catalog['products'];
-        $materials = $catalog['materials'];
-        $equipments = $catalog['equipments'];
+        app(InventoryAccess::class)->authorize($request->user(), 'purchases.create');
 
-        return view('panel.purchases.create', compact('products', 'materials', 'equipments'));
+        return $this->index($request, $panel);
     }
 
-    public function store(StorePurchaseRequest $request)
+    public function show(Request $request, InventoryPanelView $panel, int $id)
     {
-        $purchase = $this->storePurchase->execute(
-            $request->toEntity($request->user()->id)
-        );
-        if (! $purchase) {
-            return back()
-                ->withInput()
-                ->withErrors(['purchase' => 'No se pudo guardar la compra. Revisa los conceptos e intenta de nuevo.']);
-        }
+        app(InventoryAccess::class)->authorize($request->user(), 'purchases.view');
+        InventoryData::get('purchases', $id);
 
-        return redirect()
-            ->route('purchases.index')
-            ->with('success', 'Compra registrada correctamente.');
+        return $this->index($request, $panel);
     }
 
-    public function show($id)
+    public function edit(Request $request, InventoryPanelView $panel, int $id)
     {
-        //
+        app(InventoryAccess::class)->authorize($request->user(), 'purchases.create');
+        InventoryData::get('purchases', $id);
+
+        return $this->index($request, $panel);
     }
 
-    public function edit($id)
+    public function store(Request $request)
     {
-        //
-        return view('panel.purchases.edit');
+        app(\App\Services\Inventory\InventoryAccess::class)->authorize($request->user(), 'purchases.create');
+        $result = app(\App\Http\Controllers\API\OperationalInventoryController::class)->createPurchase($request);
+
+        return $request->expectsJson() ? $result : redirect()->route('purchases.index');
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, int $id)
     {
-        // update purchase and inventory
-        // update purchase
-        $purchase = Purchase::find($id);
-        $purchase->update([
-            'date' => $request->date,
-        ]);
-        // update inventory
-        $purchase->products()->updateExistingPivot($request->product_id, [
-            'quantity' => $request->quantity,
-            'price' => $request->price,
-        ]);
+        app(\App\Services\Inventory\InventoryAccess::class)->authorize($request->user(), 'purchases.create');
+        $result = app(\App\Http\Controllers\API\OperationalInventoryController::class)->updatePurchase($request, $id);
+
+        return $request->expectsJson() ? $result : redirect()->route('purchases.show', $id);
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, int $id)
     {
-        //
+        app(\App\Services\Inventory\InventoryAccess::class)->authorize($request->user(), 'purchases.create');
+        $result = app(\App\Http\Controllers\API\OperationalInventoryController::class)->cancelPurchase($request, $id);
 
+        return $request->expectsJson() ? $result : redirect()->route('purchases.index');
     }
 }

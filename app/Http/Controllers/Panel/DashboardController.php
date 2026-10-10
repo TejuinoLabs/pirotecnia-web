@@ -88,7 +88,7 @@ class DashboardController extends Controller
             'topCoverageEmployeeCount' => isset($topCoverageEmployee['eventCount'])
                 ? (string) $topCoverageEmployee['eventCount']
                 : '0',
-            'lowStockItems' => $lowStockItems,
+            'lowStockItems' => \App\Support\PanelPagination::collection(collect($lowStockItems), 'low_stock_page'),
             'criticalLowStockCount' => $criticalLowStockCount,
             'chartGranularityLabel' => $this->resolveGranularityLabel($rangeGranularity),
             'futureEventsInRangeCount' => $futureRangeEvents->count(),
@@ -522,7 +522,7 @@ class DashboardController extends Controller
 
                 return [
                     'icon' => $this->resolveInventoryIcon($product->unit),
-                    'title' => $product->name,
+                    'title' => $product->display_name,
                     'subtitle' => $product->unit ?: 'Existencias',
                     'value' => $this->formatQuantity($projectedAvailable),
                     'subValue' => 'Apartado: ' . $this->formatQuantity($reservedInRange),
@@ -532,7 +532,6 @@ class DashboardController extends Controller
             })
             ->filter(fn(array $item) => $item['projected_available'] <= Inventory::MIN_STOCK)
             ->sortBy('projected_available')
-            ->take(4)
             ->map(function (array $item) {
                 unset($item['projected_available']);
 

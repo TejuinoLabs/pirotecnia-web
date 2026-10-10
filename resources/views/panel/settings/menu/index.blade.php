@@ -58,7 +58,10 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach ($menu as $item)
+                                    @php
+                                        $listRows = \App\Support\PanelPagination::collection($menu);
+                                    @endphp
+                                    @foreach ($listRows as $item)
                                         <tr>
                                             <td>{{ $item->title }}</td>
                                             <td>{{ $item->url != "" ? route($item->url) : ""}}</td>
@@ -83,4 +86,5 @@
             </div>
         </div>
     </section>
+    <x-panel.pagination :paginator="$listRows" />
 @endsection

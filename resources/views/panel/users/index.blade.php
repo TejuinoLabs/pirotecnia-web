@@ -58,7 +58,10 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach ($users as $user)
+                                    @php
+                                        $listRows = \App\Support\PanelPagination::collection($users);
+                                    @endphp
+                                    @foreach ($listRows as $user)
                                         <tr>
                                             <td>{{ $user->name }}</td>
                                             <td>{{ $user->email }}</td>
@@ -81,6 +84,7 @@
             </div>
         </div>
     </section>
+    <x-panel.pagination :paginator="$listRows ?? \App\Support\PanelPagination::collection($users)" />
 @endsection
 
 @section('control-sidebar')

@@ -327,7 +327,10 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-border">
-                                @foreach ($saleRows as $sale)
+                                @php
+                                    $listRows = \App\Support\PanelPagination::collection($saleRows);
+                                @endphp
+                                @foreach ($listRows as $sale)
                                     <tr class="transition-colors hover:bg-surface-alt">
                                         <td class="px-6 py-5" data-label="Folio">
                                             <p class="font-mono text-sm font-semibold text-primary">{{ $sale['folio'] }}
@@ -467,4 +470,5 @@
             </aside>
         </div>
     </div>
+    <x-panel.pagination :paginator="$listRows ?? \App\Support\PanelPagination::collection($saleRows)" />
 @endsection

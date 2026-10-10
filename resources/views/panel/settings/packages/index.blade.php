@@ -259,7 +259,7 @@
                         <div
                             class="inline-flex items-center gap-2 rounded-full bg-surface-alt px-4 py-2 text-sm text-muted">
                             <span class="material-symbols-outlined text-accent">table_view</span>
-                            {{ number_format($packageRows->count()) }} filas visibles
+                            {{ number_format($packageRows->count()) }} registros en total
                         </div>
                     </div>
 
@@ -307,7 +307,10 @@
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-border">
-                                    @foreach ($packageRows as $package)
+                                    @php
+                                        $listRows = \App\Support\PanelPagination::collection($packageRows);
+                                    @endphp
+                                    @foreach ($listRows as $package)
                                         @php
                                             $status = $statusMeta($package);
                                             $isFeatured = $selectedPackage && $selectedPackage->id === $package->id;
@@ -402,7 +405,7 @@
 
                         <div
                             class="flex items-center justify-between border-t border-primary-800 bg-primary-800 px-6 py-4">
-                            <p class="text-xs font-medium text-primary-200">Mostrando {{ $packageRows->count() }} paquetes
+                            <p class="text-xs font-medium text-primary-200">Mostrando {{ ($listRows ?? \App\Support\PanelPagination::collection($packageRows))->count() }} de {{ $packageRows->count() }} paquetes
                                 registrados.</p>
                             <div class="flex gap-1">
                                 <button
@@ -552,6 +555,7 @@
             </aside>
         </div>
     </div>
+    <x-panel.pagination :paginator="$listRows ?? \App\Support\PanelPagination::collection($packageRows)" />
 @endsection
 
 @section('extra-script')

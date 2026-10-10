@@ -69,7 +69,26 @@ class PurchaseService
                 $this->syncPurchaseEquipments($eloquentPurchase, $equipments);
 
                 if (($purchase->status ?? 'confirmed') === 'confirmed') {
-                    $this->increaseMainInventory($products);
+                    $location = DB::table('inventory_locations')->where('legacy_inventory_id', 1)->whereNotNull('adopted_at')->first();
+                    $operationalProducts = $products;
+                    if ($location) {
+                        foreach ($equipments as $equipment) {
+                            $mapped = \App\Models\Product::where('legacy_equipment_id', $equipment['equipment_id'])->first();
+                            \App\Services\Inventory\InventoryData::assert($mapped !== null, 'Vincula el equipo a un artículo inventariable antes de recibirlo.');
+                            $operationalProducts = $operationalProducts->push(['product_id' => $mapped->id, 'quantity' => $equipment['quantity'], 'price' => $equipment['price']]);
+                        }
+                    }
+                    if ($location && $operationalProducts->isNotEmpty()) {
+                        $eloquentPurchase->forceFill(['uses_operational_inventory' => true, 'status' => 'ordered'])->save();
+                        $items = [];
+                        foreach ($operationalProducts as $product) {
+                            $id = \App\Services\Inventory\InventoryData::insert('operational_purchase_items', ['purchase_id' => $eloquentPurchase->id, 'product_id' => $product['product_id'], 'quantity' => $product['quantity'], 'unit_cost' => $product['price']]);
+                            $items[] = ['purchase_item_id' => $id, 'quantity' => $product['quantity']];
+                        }
+                        app(\App\Services\Inventory\PurchaseReceiptService::class)->receive($eloquentPurchase->id, ['warehouse_location_id' => $location->id, 'items' => $items, 'notes' => 'Recepción inmediata de compra capturada en panel anterior'], $purchase->user_id);
+                    } else {
+                        $this->increaseMainInventory($products);
+                    }
                 }
 
                 $eloquentPurchase->load(['products', 'equipments']);

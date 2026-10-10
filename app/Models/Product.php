@@ -21,6 +21,35 @@ class Product extends Model
         'shape',
     ];
 
+    protected $appends = ['display_name'];
+
+    public function getDisplayNameAttribute(): string
+    {
+        $name = trim((string) $this->name);
+        $caliber = trim((string) $this->caliber);
+        if ($caliber === '') {
+            return $name;
+        }
+        $label = $caliber;
+        if (preg_match('/^(\d+(?:[.,]\d+)?)\s*(?:["″]|in|pulgadas?)?$/iu', $caliber, $matches)) {
+            $number = str_replace(',', '.', $matches[1]);
+            if (str_contains($number, '.')) {
+                $number = rtrim(rtrim($number, '0'), '.');
+            }
+            $label = $number.'"';
+            // Normalize a caliber already present at the end of the name.
+            $pattern = '/(?<![\d.,])'.preg_quote($number, '/').'\s*(?:["″]|in|pulgadas?)?$/iu';
+            if (preg_match($pattern, $name)) {
+                return trim(preg_replace($pattern, '', $name)).' '.$label;
+            }
+        }
+        if (mb_stripos($name, $label) !== false) {
+            return $name;
+        }
+
+        return $name.' '.$label;
+    }
+
     protected static function boot()
     {
         parent::boot();

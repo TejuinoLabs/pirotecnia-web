@@ -85,7 +85,7 @@ Route::middleware(['auth:api'])->group(function () {
 
     // Inventory
     Route::get('/inventory', [InventoryController::class, 'index']);
-    Route::get('/inventory/{id}', [InventoryController::class, 'show']);
+    Route::get('/inventory/{id}', [InventoryController::class, 'show'])->whereNumber('id');
     Route::post('/inventory', [InventoryController::class, 'store']);
     Route::put('/inventory/{id}', [InventoryController::class, 'update']);
     Route::delete('/inventory/{id}', [InventoryController::class, 'destroy']);
@@ -112,3 +112,8 @@ Route::middleware(['auth:api'])->group(function () {
     Route::delete('/stall/{id}', [StallController::class, 'destroy']);
 
 });
+
+$registerInventoryRoutes = require __DIR__.'/inventory_api.php';
+$registerInventoryRoutes('auth:api');
+
+require __DIR__.'/mobile_api.php';

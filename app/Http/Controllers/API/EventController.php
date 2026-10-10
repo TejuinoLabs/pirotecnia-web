@@ -12,7 +12,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Events\StoreEventRequest;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 
 class EventController extends Controller
@@ -28,15 +27,27 @@ class EventController extends Controller
 
     public function getEventsByEmployee(Request $request)
     {
-        $id = Auth::user()->employee->id;
+        abort_unless($request->user()->employee, 403, 'No tienes un empleado asociado.');
+        $id = $request->user()->employee->id;
         $events = app(GetEventsByEmployee::class)->execute($id, $request->get('page', 1));
 
         return response()->success($events, 200);
     }
 
-    public function show($id)
+    public function show(Request $request, int $id)
     {
+        $actor = $request->user();
+        $roles = $actor->roles()->pluck('name')->merge([$actor->role?->name]);
+        if ($roles->intersect(['root', 'admin'])->isEmpty()) {
+            if ($roles->contains('technician') || $actor->employee) {
+                app(\App\Services\Mobile\TechnicianEventService::class)->authorize($actor, $id);
+            } else {
+                app(\App\Services\Inventory\InventoryAccess::class)->authorize($actor, 'events.view');
+            }
+        }
+        \App\Services\Inventory\InventoryData::get('events', $id);
         $event = app(GetEvent::class)->execute($id);
+        abort_unless($event, 404);
         $pdf = $this->generatePdf($event);
         $fileName = 'event_'.$event->id.'.pdf';
         Storage::disk('public')->put('pdf/'.$fileName, $pdf);

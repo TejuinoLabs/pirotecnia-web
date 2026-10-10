@@ -164,7 +164,10 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-primary-700/60">
-                        @forelse ($employees as $employee)
+                        @php
+                            $listRows = \App\Support\PanelPagination::collection($employees);
+                        @endphp
+                        @forelse ($listRows as $employee)
                             @php
                                 $experienceLevel = optional($employee->experienceLevel)->name;
                                 $initial = filled($employee->name)
@@ -270,7 +273,7 @@
             <div
                 class="flex flex-col gap-3 border-t border-primary-700/60 px-8 py-5 text-sm text-primary-200 sm:flex-row sm:items-center sm:justify-between">
                 <p>
-                    Mostrando <span class="font-semibold text-on-primary">{{ $totalEmployees }}</span>
+                    Mostrando <span class="font-semibold text-on-primary">{{ ($listRows ?? \App\Support\PanelPagination::collection($employees))->count() }} de {{ $totalEmployees }}</span>
                     colaboradores en esta vista.
                 </p>
                 <a href="{{ route('employees.create') }}"
@@ -281,4 +284,5 @@
             </div>
         </section>
     </div>
+    <x-panel.pagination :paginator="$listRows ?? \App\Support\PanelPagination::collection($employees)" />
 @endsection

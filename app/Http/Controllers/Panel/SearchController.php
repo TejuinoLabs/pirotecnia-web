@@ -11,7 +11,7 @@ use App\Models\Sale;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Str;
 
 class SearchController extends Controller
@@ -73,7 +73,7 @@ class SearchController extends Controller
             ],
         ]);
 
-        $totalResults = $resultGroups->sum(fn (array $group) => $group['items']->count());
+        $totalResults = $resultGroups->sum(fn (array $group) => $group['items'] instanceof LengthAwarePaginator ? $group['items']->total() : $group['items']->count());
         $activeGroups = $resultGroups->filter(fn (array $group) => $group['items']->isNotEmpty())->values();
         $searchNotice = $query === ''
             ? 'Escribe un nombre, telefono, folio, direccion o cliente para buscar en todo el panel.'
@@ -89,7 +89,7 @@ class SearchController extends Controller
         ]);
     }
 
-    private function searchEvents(string $query, bool $isNumericQuery): Collection
+    private function searchEvents(string $query, bool $isNumericQuery): LengthAwarePaginator
     {
         $like = '%'.$query.'%';
 
@@ -113,9 +113,8 @@ class SearchController extends Controller
                 }
             })
             ->orderBy('event_date')
-            ->limit(6)
-            ->get()
-            ->map(function (Event $event) {
+            ->paginate(15, ['*'], 'events_page')->withQueryString()
+            ->through(function (Event $event) {
                 $eventDate = $event->event_date
                     ? Carbon::parse($event->event_date, 'America/Mexico_City')->locale('es')->isoFormat('D MMM YYYY, HH:mm')
                     : 'Fecha sin definir';
@@ -137,7 +136,7 @@ class SearchController extends Controller
             });
     }
 
-    private function searchEmployees(string $query, bool $isNumericQuery): Collection
+    private function searchEmployees(string $query, bool $isNumericQuery): LengthAwarePaginator
     {
         $like = '%'.$query.'%';
 
@@ -155,9 +154,8 @@ class SearchController extends Controller
                 }
             })
             ->orderBy('name')
-            ->limit(6)
-            ->get()
-            ->map(function (Employee $employee) {
+            ->paginate(15, ['*'], 'employees_page')->withQueryString()
+            ->through(function (Employee $employee) {
                 return [
                     'title' => $employee->name ?: 'Empleado sin nombre',
                     'subtitle' => $employee->email ?: 'Correo sin registrar',
@@ -171,7 +169,7 @@ class SearchController extends Controller
             });
     }
 
-    private function searchUsers(string $query, bool $isNumericQuery): Collection
+    private function searchUsers(string $query, bool $isNumericQuery): LengthAwarePaginator
     {
         $like = '%'.$query.'%';
 
@@ -186,9 +184,8 @@ class SearchController extends Controller
                 }
             })
             ->orderBy('name')
-            ->limit(6)
-            ->get()
-            ->map(function (User $user) {
+            ->paginate(15, ['*'], 'users_page')->withQueryString()
+            ->through(function (User $user) {
                 return [
                     'title' => $user->name,
                     'subtitle' => $user->email,
@@ -201,7 +198,7 @@ class SearchController extends Controller
             });
     }
 
-    private function searchProducts(string $query, bool $isNumericQuery): Collection
+    private function searchProducts(string $query, bool $isNumericQuery): LengthAwarePaginator
     {
         $like = '%'.$query.'%';
 
@@ -220,9 +217,8 @@ class SearchController extends Controller
                 }
             })
             ->orderBy('name')
-            ->limit(6)
-            ->get()
-            ->map(function (Product $product) {
+            ->paginate(15, ['*'], 'products_page')->withQueryString()
+            ->through(function (Product $product) {
                 return [
                     'title' => $product->name,
                     'subtitle' => Str::limit($product->description ?: 'Sin descripcion', 110),
@@ -238,7 +234,7 @@ class SearchController extends Controller
             });
     }
 
-    private function searchPackages(string $query, bool $isNumericQuery): Collection
+    private function searchPackages(string $query, bool $isNumericQuery): LengthAwarePaginator
     {
         $like = '%'.$query.'%';
 
@@ -255,9 +251,8 @@ class SearchController extends Controller
                 }
             })
             ->orderBy('name')
-            ->limit(6)
-            ->get()
-            ->map(function (Package $package) {
+            ->paginate(15, ['*'], 'packages_page')->withQueryString()
+            ->through(function (Package $package) {
                 return [
                     'title' => $package->name,
                     'subtitle' => Str::limit($package->description ?: 'Paquete sin descripcion', 110),
@@ -272,7 +267,7 @@ class SearchController extends Controller
             });
     }
 
-    private function searchSales(string $query, bool $isNumericQuery): Collection
+    private function searchSales(string $query, bool $isNumericQuery): LengthAwarePaginator
     {
         $like = '%'.$query.'%';
 
@@ -287,9 +282,8 @@ class SearchController extends Controller
                 }
             })
             ->latest()
-            ->limit(6)
-            ->get()
-            ->map(function (Sale $sale) {
+            ->paginate(15, ['*'], 'sales_page')->withQueryString()
+            ->through(function (Sale $sale) {
                 return [
                     'title' => $sale->client_name ?: 'Venta #'.$sale->id,
                     'subtitle' => $sale->client_address ?: 'Direccion sin registrar',

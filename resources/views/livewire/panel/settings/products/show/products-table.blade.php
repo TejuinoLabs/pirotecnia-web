@@ -16,7 +16,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach ($product->products as $idnex => $productAux)
+                @foreach ($components as $idnex => $productAux)
                     <tr wire:key="{{ $productAux->id }}">
                         <td>
                             {{ $productAux->name }}
@@ -80,5 +80,6 @@
                 @endif
             </tbody>
         </table>
+        <div class="p-4">{{ $components->links() }}</div>
     </x-slot>
 </x-card>

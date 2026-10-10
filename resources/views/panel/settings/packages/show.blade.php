@@ -35,6 +35,12 @@
 @endsection
 
 @section('main-content')
+    @if (app(\App\Services\Inventory\InventoryAccess::class)->allows(auth()->user(), 'events.view'))
+    <div class="mx-auto mt-16 max-w-[1680px] px-4 pt-6 sm:px-8">
+        <a href="{{ route('settings.packages.requirements', $package->id) }}" class="inline-flex rounded-xl bg-primary-700 px-4 py-3 text-secondary">Requerimientos del paquete</a>
+    </div>
+    @endif
+
     <div class="mx-auto mt-16 flex w-full max-w-[1680px] flex-col gap-8 px-4 py-6 sm:p-8 xl:flex-row xl:items-start">
         <div class="min-w-0 flex-1 space-y-6 xl:flex-[1.2]">
             <section class="relative overflow-hidden rounded-3xl bg-primary-800 shadow-2xl shadow-primary-900/20">

@@ -5,6 +5,7 @@ namespace App\Imports;
 use App\Models\Inventory;
 use App\Models\Product;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Concerns\ToCollection;
 
 class ProductsImport implements ToCollection
@@ -31,9 +32,10 @@ class ProductsImport implements ToCollection
                     ]);
                     if ($product['name'] != null) {
 
-                        $this->addProductToDB($product);
-
-                        $this->addProductsToInventory($product);
+                        DB::transaction(function () use ($product) {
+                            $model = $this->addProductToDB($product);
+                            $this->addProductsToInventory($product, $model);
+                        });
                         $products->push($product);
                     }
                 }
@@ -55,13 +57,24 @@ class ProductsImport implements ToCollection
         $productDB->caliber = $product['Caliber'];
         $productDB->shape = $product['shape'];
         $productDB->save();
+
+        return $productDB;
     }
 
-    private function addProductsToInventory($product)
+    private function addProductsToInventory($product, Product $productDB)
     {
         $inventory = Inventory::find(1);
 
-        $productDB = Product::where('name', $product['name'])->where('shots', $product['Shots'])->where('caliber', $product['Caliber'])->where('shape', $product['shape'])->first();
+        $location = DB::table('inventory_locations')->where('legacy_inventory_id', 1)->whereNotNull('adopted_at')->first();
+        if ($location) {
+            abort_unless(auth()->user(), 403);
+            app(\App\Services\Inventory\InventoryAccess::class)->authorize(auth()->user(), 'inventory.adjust');
+            $productDB->forceFill(['purchase_cost' => $product['Price']])->save();
+            \App\Services\Inventory\InventoryData::assert((float) $product['Stock'] >= 0, 'Stock de importación negativo.');
+            if ((float) $product['Stock'] > 0) app(\App\Services\Inventory\InventoryMovementService::class)->record($productDB->id, (float) $product['Stock'], null, $location->id, 'adjustment_in', auth()->id(), 'Saldo de apertura de artículo importado desde Excel');
+
+            return;
+        }
 
         $inventory->products()->attach($productDB->id, [
             'quantity' => $product['Stock'],

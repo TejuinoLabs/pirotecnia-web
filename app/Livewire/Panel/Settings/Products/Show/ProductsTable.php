@@ -4,9 +4,12 @@ namespace App\Livewire\Panel\Settings\Products\Show;
 
 use App\Models\Product;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 class ProductsTable extends Component
 {
+    use WithPagination;
+
     public $productId;
 
     public $product;
@@ -28,7 +31,7 @@ class ProductsTable extends Component
 
     public function render()
     {
-        return view('livewire.panel.settings.products.show.products-table');
+        return view('livewire.panel.settings.products.show.products-table', ['components' => $this->product->products()->orderBy('products.name')->paginate(15, ['products.*'], 'components_page')]);
     }
 
     // switch to add product mode

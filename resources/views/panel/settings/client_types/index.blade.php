@@ -21,84 +21,19 @@
             </div>
         @endif
 
-        <div class="mb-10 flex items-end justify-between">
-            <div>
-                <nav class="mb-3 flex space-x-2 text-xs font-label uppercase tracking-widest text-primary-200">
-                    <a class="cursor-pointer hover:text-primary" href="{{ route('dashboard') }}">Inicio</a>
-                    <span>/</span>
-                    <a class="cursor-pointer hover:text-primary" href="{{ route('settings.index') }}">Configuración</a>
-                    <span>/</span>
-                    <span class="text-on-primary">Tipos de Cliente</span>
-                </nav>
-                <h2 class="mb-2 text-4xl font-extrabold font-headline tracking-tight text-on-primary">Tipos de cliente</h2>
-                <p class="text-base text-primary-200">Administra las categorías de clientes del sistema</p>
-            </div>
-            <a href="{{ route('client-types.create') }}"
-                class="flex items-center space-x-2 rounded-xl bg-secondary px-6 py-3 font-bold text-on-secondary shadow-lg shadow-secondary/20 transition-all duration-150 hover:bg-secondary-600 active:scale-95">
-                <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">add_circle</span>
-                <span>Nuevo tipo de cliente</span>
-            </a>
-        </div>
+        <x-panel.settings.header title="Tipos de cliente" description="Administra las categorías de clientes y su uso en las ventas del sistema."
+            :action-url="route('client-types.create')" action-label="Nuevo tipo de cliente" />
+        <x-panel.settings.stats :stats="[
+            ['label' => 'Tipos de cliente', 'value' => $clientTypeStats['total'], 'icon' => 'groups', 'hint' => 'Categorías registradas'],
+            ['label' => 'Con ventas', 'value' => $clientTypeStats['active'], 'icon' => 'check_circle', 'hint' => 'Con registros comerciales', 'tone' => 'text-secondary'],
+            ['label' => 'Sin ventas', 'value' => $clientTypeStats['inactive'], 'icon' => 'person', 'hint' => 'Sin registros comerciales', 'tone' => 'text-warning'],
+        ]" />
 
-        <div class="mb-12 grid grid-cols-1 gap-6 md:grid-cols-3">
-            <div class="group relative overflow-hidden rounded-2xl bg-primary-800 p-8 shadow-2xl shadow-primary-900/20">
-                <div class="absolute right-0 top-0 p-4 opacity-10 transition-opacity group-hover:opacity-20">
-                    <span class="material-symbols-outlined text-6xl text-on-primary">groups</span>
-                </div>
-                <p class="mb-2 text-xs font-label uppercase tracking-widest text-primary-200">Total de categorías</p>
-                <div class="flex items-end space-x-3">
-                    <h3 class="text-5xl font-headline font-extrabold text-on-primary">
-                        {{ str_pad((string) $clientTypeStats['total'], 2, '0', STR_PAD_LEFT) }}
-                    </h3>
-                    <span class="mb-1.5 text-sm font-semibold text-secondary">registradas</span>
-                </div>
-                <div class="mt-4 h-1 w-full overflow-hidden rounded-full bg-primary-700/60">
-                    <div class="h-full w-full rounded-full bg-primary"></div>
-                </div>
-            </div>
-
-            <div class="group relative overflow-hidden rounded-2xl bg-primary-800 p-8 shadow-2xl shadow-primary-900/20">
-                <div class="absolute right-0 top-0 p-4 opacity-10 transition-opacity group-hover:opacity-20">
-                    <span class="material-symbols-outlined text-6xl text-secondary">verified</span>
-                </div>
-                <p class="mb-2 text-xs font-label uppercase tracking-widest text-primary-200">Categorías activas</p>
-                <div class="flex items-end space-x-3">
-                    <h3 class="text-5xl font-headline font-extrabold text-secondary">
-                        {{ str_pad((string) $clientTypeStats['active'], 2, '0', STR_PAD_LEFT) }}
-                    </h3>
-                    <span class="mb-1.5 text-sm font-medium text-primary-200">con ventas asociadas</span>
-                </div>
-                <div class="mt-4 h-1 w-full overflow-hidden rounded-full bg-primary-700/60">
-                    <div class="h-full rounded-full bg-secondary"
-                        style="width: {{ $clientTypeStats['total'] > 0 ? ($clientTypeStats['active'] / $clientTypeStats['total']) * 100 : 0 }}%">
-                    </div>
-                </div>
-            </div>
-
-            <div class="group relative overflow-hidden rounded-2xl bg-primary-800 p-8 shadow-2xl shadow-primary-900/20">
-                <div class="absolute right-0 top-0 p-4 opacity-10 transition-opacity group-hover:opacity-20">
-                    <span class="material-symbols-outlined text-6xl text-warning">block</span>
-                </div>
-                <p class="mb-2 text-xs font-label uppercase tracking-widest text-primary-200">Categorías inactivas</p>
-                <div class="flex items-end space-x-3">
-                    <h3 class="text-5xl font-headline font-extrabold text-warning">
-                        {{ str_pad((string) $clientTypeStats['inactive'], 2, '0', STR_PAD_LEFT) }}
-                    </h3>
-                    <span class="mb-1.5 text-sm font-medium text-primary-200">sin uso comercial</span>
-                </div>
-                <div class="mt-4 h-1 w-full overflow-hidden rounded-full bg-primary-700/60">
-                    <div class="h-full rounded-full bg-warning"
-                        style="width: {{ $clientTypeStats['total'] > 0 ? ($clientTypeStats['inactive'] / $clientTypeStats['total']) * 100 : 0 }}%">
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="overflow-hidden rounded-2xl bg-primary-800 shadow-2xl shadow-primary-900/20">
+        <div class="overflow-hidden rounded-xl bg-primary-800 shadow-2xl shadow-primary-900/20">
             <div class="flex items-center justify-between bg-primary-700/50 p-6">
-                <h4 class="text-lg font-headline font-bold text-on-primary">Listado de Categorías</h4>
+                <h4 class="text-lg font-headline font-bold text-on-primary">Listado de tipos de cliente</h4>
                 <div class="text-xs font-semibold uppercase tracking-widest text-primary-200">
-                    {{ number_format($clientTypeRows->count()) }} registros visibles
+                    {{ number_format($clientTypeRows->count()) }} registros en total
                 </div>
             </div>
 
@@ -137,7 +72,10 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-primary-700/40">
-                        @foreach ($clientTypeRows as $clientType)
+                        @php
+                            $listRows = \App\Support\PanelPagination::collection($clientTypeRows);
+                        @endphp
+                        @foreach ($listRows as $clientType)
                             <tr class="group transition-colors hover:bg-primary-700/35">
                                 <td class="px-6 py-5" data-label="Nombre">
                                     <span class="font-semibold text-on-primary">{{ $clientType['name'] }}</span>
@@ -166,7 +104,7 @@
                                 </td>
                                 <td class="px-6 py-5 text-right" data-label="Acciones">
                                     <div
-                                        class="flex items-center justify-end space-x-1 opacity-0 transition-opacity group-hover:opacity-100">
+                                        class="flex items-center justify-end space-x-1 ">
                                         <a class="p-1.5 transition-colors hover:text-primary"
                                             href="{{ route('client-types.show', $clientType['id']) }}" title="Ver detalle">
                                             <span class="material-symbols-outlined text-lg">visibility</span>
@@ -194,7 +132,7 @@
 
             <div class="flex items-center justify-between bg-primary-700/40 p-6">
                 <p class="text-xs text-primary-200">Mostrando <span
-                        class="font-semibold text-on-primary">{{ $clientTypeRows->count() }}</span> categorías</p>
+                        class="font-semibold text-on-primary">{{ ($listRows ?? \App\Support\PanelPagination::collection($clientTypeRows))->count() }}</span> de {{ $clientTypeRows->count() }} categorías</p>
                 <a class="rounded-lg bg-primary-800 px-3 py-2 text-xs font-semibold text-primary-200 transition-colors hover:bg-primary hover:text-on-primary"
                     href="{{ route('client-types.create') }}">
                     Crear nuevo
@@ -202,4 +140,5 @@
             </div>
         </div>
     </div>
+    <x-panel.pagination :paginator="$listRows ?? \App\Support\PanelPagination::collection($clientTypeRows)" />
 @endsection

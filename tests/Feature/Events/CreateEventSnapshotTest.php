@@ -22,6 +22,19 @@ class CreateEventSnapshotTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // The fixtures describe future events relative to this fixed capture date.
+        Carbon::setTestNow('2026-04-25 12:00:00');
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
     public function test_it_creates_registered_events_with_snapshots_and_deferred_inventory_discount(): void
     {
         Queue::fake();

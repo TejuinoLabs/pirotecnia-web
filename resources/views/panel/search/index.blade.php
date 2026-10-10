@@ -119,7 +119,7 @@
                                 </div>
                                 <span
                                     class="inline-flex rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] {{ $toneClasses[$group['tone']] }}">
-                                    {{ $group['items']->count() }}
+                                    {{ $group['items'] instanceof \Illuminate\Pagination\LengthAwarePaginator ? $group['items']->total() : $group['items']->count() }}
                                 </span>
                             </div>
                         </div>
@@ -162,7 +162,7 @@
                             </div>
                             <span
                                 class="inline-flex rounded-full border px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] {{ $toneClasses[$group['tone']] }}">
-                                {{ $group['items']->count() }} encontrados
+                                {{ $group['items'] instanceof \Illuminate\Pagination\LengthAwarePaginator ? $group['items']->total() : $group['items']->count() }} encontrados
                             </span>
                         </div>
 
@@ -182,6 +182,9 @@
                                     </div>
                                 </a>
                             @endforeach
+                            @if ($group['items'] instanceof \Illuminate\Pagination\LengthAwarePaginator)
+                                <x-panel.pagination :paginator="$group['items']" />
+                            @endif
                         </div>
                     </article>
                 @endforeach

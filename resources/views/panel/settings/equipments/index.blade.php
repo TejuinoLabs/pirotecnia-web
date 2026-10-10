@@ -211,7 +211,10 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-primary-700/50">
-                            @foreach ($equipmentRows as $equipment)
+                            @php
+                                $listRows = \App\Support\PanelPagination::collection($equipmentRows);
+                            @endphp
+                            @foreach ($listRows as $equipment)
                                 <tr class="transition-colors hover:bg-primary-700/35">
                                     <td class="px-6 py-4" data-label="Nombre del equipo">
                                         <div class="flex items-center gap-3">
@@ -285,7 +288,7 @@
 
             <div class="flex items-center justify-between bg-primary-700/60 px-6 py-4">
                 <span class="text-xs text-primary-200">
-                    Mostrando {{ number_format($equipmentRows->count()) }} de {{ number_format($equipments->count()) }}
+                    Mostrando {{ ($listRows ?? \App\Support\PanelPagination::collection($equipmentRows))->count() }} de {{ number_format($equipments->count()) }}
                     equipos registrados
                 </span>
                 @if ($hasActiveFilters)
@@ -298,6 +301,7 @@
             </div>
         </div>
     </div>
+    <x-panel.pagination :paginator="$listRows ?? \App\Support\PanelPagination::collection($equipmentRows)" />
 @endsection
 
 @section('extra-script')

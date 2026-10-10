@@ -53,13 +53,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/panel/users', [UserController::class, 'index'])->name('users.index');
     Route::get('/panel/employees', [UserController::class, 'indexEmployees'])->name('employees.index');
     Route::get('/panel/events', [EventController::class, 'index'])->name('events.index');
-    Route::get('/panel/inventories', [InventoryController::class, 'index'])->name('inventories.index');
+    Route::get('/panel/inventories', [\App\Http\Controllers\Panel\OperationalInventoryPanelController::class, 'index'])->name('inventories.index');
     Route::get('/panel/purchases', [PurchaseController::class, 'index'])->name('purchases.index');
     Route::get('/panel/sales', [SaleController::class, 'index'])->name('sales.index');
     Route::get('/settings', [SettingsController::class, 'indexSettings'])->name('settings.index');
     Route::get('/settings/menu', [MenuController::class, 'index'])->name('settings.menu.index');
     Route::get('/settings/packages', [PackageController::class, 'index'])->name('settings.packages.index');
-    Route::get('/settings/products', [ProductController::class, 'index'])->name('settings.products.index');
+    Route::get('/settings/products', [\App\Http\Controllers\Panel\InventorySettingsController::class, 'index'])->defaults('section', 'products')->name('settings.products.index');
     Route::get('/settings/equipments', [equipmentController::class, 'index'])->name('settings.equipments.index');
     Route::get('/settings/client-types', [ClientTypeController::class, 'index'])->name('settings.client-types.index');
     Route::get('/settings/product-roles', [ProductRoleController::class, 'index'])->name('settings.product-roles.index');
@@ -81,6 +81,8 @@ Route::middleware('auth')->group(function () {
     Route::put('panel/employees/{id}', [UserController::class, 'updateEmployee'])->name('employees.update');
     Route::delete('panel/employees/{id}', [UserController::class, 'destroyEmployee'])->name('employees.destroy');
     Route::get('panel/employees/{id}', [UserController::class, 'showEmployee'])->name('employees.show');
+
+    Route::get('/panel/events/preparations', [\App\Http\Controllers\Panel\OperationalInventoryPanelController::class, 'index'])->defaults('section', 'events')->name('inventory.preparations');
 
     // Events
     Route::get('panel/events/create', [EventController::class, 'create'])->name('events.create');
@@ -186,3 +188,22 @@ Route::middleware('auth')->group(function () {
     Route::get('settings/experience-levels/{id}', [ExperienceLevelController::class, 'show'])->name('experience-levels.show');
 
 });
+
+Route::middleware('auth')->group(function () {
+    Route::get('/inventory', fn () => redirect()->route('inventories.index'))->name('inventory.operations');
+    Route::get('/inventory/kardex', [\App\Http\Controllers\Panel\OperationalInventoryPanelController::class, 'index'])->defaults('section', 'kardex')->name('inventory.kardex');
+    Route::get('/inventory/purchases', fn () => redirect()->route('purchases.index'))->name('inventory.purchases');
+    Route::get('/inventory/catalogs', fn () => redirect()->route('settings.index'))->name('inventory.catalogs');
+    Route::get('/inventory/preparations', fn () => redirect()->route('inventory.preparations'));
+    Route::get('/inventory/requirements', fn () => redirect()->route('settings.package-requirements'))->name('inventory.requirements');
+    Route::get('/events/{event}/preparation', [\App\Http\Controllers\Panel\OperationalInventoryPanelController::class, 'index'])->name('events.preparation');
+    Route::get('/settings/inventory-rules', [\App\Http\Controllers\Panel\InventorySettingsController::class, 'index'])->defaults('section', 'rules')->name('inventory.rules');
+    Route::get('/settings/package-requirements', [\App\Http\Controllers\Panel\InventorySettingsController::class, 'index'])->defaults('section', 'requirements')->name('settings.package-requirements');
+    Route::get('/settings/packages/{package}/requirements', [\App\Http\Controllers\Panel\InventorySettingsController::class, 'index'])->whereNumber('package')->defaults('section', 'requirements')->name('settings.packages.requirements');
+    foreach (['categories', 'attributes', 'effects', 'colors', 'locations', 'profiles'] as $catalog) {
+        Route::get('/settings/inventory/'.$catalog, [\App\Http\Controllers\Panel\InventorySettingsController::class, 'index'])->defaults('catalog', $catalog)->defaults('section', 'catalogs')->name('settings.inventory.'.$catalog);
+    }
+    Route::get('/inventory/audit', [\App\Http\Controllers\Panel\OperationalInventoryPanelController::class, 'index'])->defaults('section', 'audit')->name('inventory.audit');
+});
+$registerInventoryRoutes = require __DIR__.'/inventory_api.php';
+$registerInventoryRoutes('auth', 'inventory/operations');

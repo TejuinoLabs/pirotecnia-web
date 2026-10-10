@@ -22,6 +22,11 @@ class Inventory extends Model
 
     public static function updateQuantityProducts($event)
     {
+        // Operational events can only leave stock through a confirmed dispatch.
+        if (DB::table('event_requirements')->where('event_id', $event->id)->exists()
+            || DB::table('inventory_locations')->where('legacy_inventory_id', 1)->whereNotNull('adopted_at')->exists()) {
+            return;
+        }
         $event->loadMissing(['products', 'equipments']);
         $inventory = Inventory::with('products')->find(1);
 

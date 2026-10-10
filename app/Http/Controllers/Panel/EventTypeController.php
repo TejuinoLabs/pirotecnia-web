@@ -26,6 +26,7 @@ class EventTypeController extends Controller
 
     public function store(Request $request)
     {
+        $request->validate(['name' => ['required', 'string', 'max:255'], 'description' => ['required', 'string', 'max:255']]);
         $eventType = new EventType;
         $eventType->name = $request->name;
         $eventType->description = $request->description;
@@ -36,24 +37,39 @@ class EventTypeController extends Controller
 
     public function show($id)
     {
-        return view('panel.settings.event_types.show');
+        $record = EventType::findOrFail($id);
+
+        return view('panel.settings.event_types.show', compact('record'));
     }
 
     public function edit($id)
     {
-        return view('panel.settings.event_types.edit');
+        $record = EventType::findOrFail($id);
+
+        return view('panel.settings.event_types.edit', compact('record'));
     }
 
     public function update(Request $request, $id)
     {
-        return redirect()->route('settings.event_types.index');
+        $data = $request->validate(['name' => ['required', 'string', 'max:255'], 'description' => ['required', 'string', 'max:255']]);
+        $record = EventType::findOrFail($id);
+        $record->name = $data['name'];
+        $record->description = $data['description'];
+        $record->save();
+
+        return redirect()->route('event_types.show', $record->id)->with('status', 'Registro actualizado correctamente.');
     }
 
     public function destroy($id)
     {
-        $eventType = EventType::find($id);
-        $eventType->delete();
+        $record = EventType::findOrFail($id);
+        foreach (['events', 'packages'] as $table) {
+            if (\Illuminate\Support\Facades\DB::table($table)->where('event_type_id', $record->id)->exists()) {
+                return redirect()->route('settings.event_types.index')->with('error', 'No se puede eliminar un registro que está en uso.');
+            }
+        }
+        $record->delete();
 
-        return redirect()->route('settings.event_types.index');
+        return redirect()->route('settings.event_types.index')->with('status', 'Registro eliminado correctamente.');
     }
 }

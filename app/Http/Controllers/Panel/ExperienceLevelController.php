@@ -26,6 +26,7 @@ class ExperienceLevelController extends Controller
 
     public function store(Request $request)
     {
+        $request->validate(['name' => ['required', 'string', 'max:255'], 'description' => ['required', 'string', 'max:255']]);
         $experienceLevel = new ExperienceLevel;
         $experienceLevel->name = $request->name;
         $experienceLevel->description = $request->description;
@@ -36,21 +37,39 @@ class ExperienceLevelController extends Controller
 
     public function show($id)
     {
-        return view('panel.settings.experience_levels.show');
+        $record = ExperienceLevel::findOrFail($id);
+
+        return view('panel.settings.experience_levels.show', compact('record'));
     }
 
     public function edit($id)
     {
-        return view('panel.settings.experience_levels.edit');
+        $record = ExperienceLevel::findOrFail($id);
+
+        return view('panel.settings.experience_levels.edit', compact('record'));
     }
 
     public function update(Request $request, $id)
     {
-        return redirect()->route('settings.experience-levels.index');
+        $data = $request->validate(['name' => ['required', 'string', 'max:255'], 'description' => ['required', 'string', 'max:255']]);
+        $record = ExperienceLevel::findOrFail($id);
+        $record->name = $data['name'];
+        $record->description = $data['description'];
+        $record->save();
+
+        return redirect()->route('experience-levels.show', $record->id)->with('status', 'Registro actualizado correctamente.');
     }
 
     public function destroy($id)
     {
-        return redirect()->route('settings.experience-levels.index');
+        $record = ExperienceLevel::findOrFail($id);
+        foreach (['employees', 'packages'] as $table) {
+            if (\Illuminate\Support\Facades\DB::table($table)->where('experience_level_id', $record->id)->exists()) {
+                return redirect()->route('settings.experience-levels.index')->with('error', 'No se puede eliminar un registro que está en uso.');
+            }
+        }
+        $record->delete();
+
+        return redirect()->route('settings.experience-levels.index')->with('status', 'Registro eliminado correctamente.');
     }
 }

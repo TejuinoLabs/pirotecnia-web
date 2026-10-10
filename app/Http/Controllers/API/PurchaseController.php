@@ -3,17 +3,41 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Services\Inventory\InventoryAccess;
 use Illuminate\Http\Request;
 
+/** Legacy URL compatibility; all purchase operations share the inventory service. */
 class PurchaseController extends Controller
 {
-    public function index() {}
+    private function authorize(Request $request, string $permission): OperationalInventoryController
+    {
+        app(InventoryAccess::class)->authorize($request->user(), $permission);
 
-    public function show($id) {}
+        return app(OperationalInventoryController::class);
+    }
 
-    public function store(Request $request) {}
+    public function index(Request $request)
+    {
+        return $this->authorize($request, 'purchases.view')->purchases($request);
+    }
 
-    public function update(Request $request, $id) {}
+    public function show(Request $request, int $id)
+    {
+        return $this->authorize($request, 'purchases.view')->purchase($id);
+    }
 
-    public function destroy($id) {}
+    public function store(Request $request)
+    {
+        return $this->authorize($request, 'purchases.create')->createPurchase($request);
+    }
+
+    public function update(Request $request, int $id)
+    {
+        return $this->authorize($request, 'purchases.create')->updatePurchase($request, $id);
+    }
+
+    public function destroy(Request $request, int $id)
+    {
+        return $this->authorize($request, 'purchases.create')->cancelPurchase($request, $id);
+    }
 }

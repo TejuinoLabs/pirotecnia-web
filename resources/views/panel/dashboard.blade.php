@@ -347,7 +347,7 @@
                     @forelse ($lowStockItems as $item)
                         <livewire:info-summary-card :icon="$item['icon']" :title="$item['title']"
                             :subtitle="$item['subtitle']" :value="$item['value']" :subValue="$item['subValue']"
-                            :color="$item['color']" :key="'low-stock-'.$loop->index" />
+                            :color="$item['color']" :key="'low-stock-'.$lowStockItems->currentPage().'-'.$loop->index" />
                     @empty
                         <div class="rounded-2xl bg-primary-700/70 p-4">
                             <p class="text-sm font-semibold text-on-primary">Sin alertas para el rango</p>
@@ -357,6 +357,10 @@
                         </div>
                     @endforelse
                 </div>
+
+                @if ($lowStockItems->total())
+                    <x-panel.pagination :paginator="$lowStockItems" />
+                @endif
 
                 <div
                     class="relative mt-8 overflow-hidden rounded-2xl border border-primary-500/20 bg-gradient-to-br from-primary-700 to-primary-600 p-6">

@@ -1,0 +1,119 @@
+<?php
+
+namespace App\Services\Mobile;
+
+use App\Models\User;
+use App\Services\Inventory\InventoryAccess;
+use App\Services\Inventory\InventoryData;
+use Illuminate\Support\Facades\DB;
+
+class TechnicianEventService
+{
+    public function assignedIds(int $actor): \Illuminate\Database\Query\Builder
+    {
+        return DB::table('employee_event')->join('employees', 'employees.id', '=', 'employee_event.employee_id')->where('employees.user_id', $actor)->select('employee_event.event_id');
+    }
+
+    public function authorize(User $actor, int $event, ?string $permission = null, bool $lock = false): object
+    {
+        $row = InventoryData::get('events', $event, $lock);
+        abort_unless(DB::query()->fromSub($this->assignedIds($actor->id), 'assigned')->where('event_id', $event)->exists(), 403, 'No tienes una asignación vigente en este evento.');
+        if ($permission) {
+            app(InventoryAccess::class)->authorize($actor, $permission);
+        }
+
+        return $row;
+    }
+
+    public function snapshot(int $event): object
+    {
+        return DB::transaction(function () use ($event) {
+            $row = InventoryData::get('events', $event, true);
+            $existing = DB::table('mobile_event_protocols')->where('event_id', $event)->first();
+            if ($existing) {
+                return $existing;
+            }
+            $packages = DB::table('event_package')->join('packages', 'packages.id', '=', 'event_package.package_id')->where('event_id', $event)->select('packages.id', 'packages.name', 'packages.description')->get()->map(fn ($p) => (array) $p)->all();
+            if (! $packages && $row->package_id) {
+                $package = DB::table('packages')->where('id', $row->package_id)->first(['id', 'name', 'description']);
+                if ($package) {
+                    $packages = [(array) $package];
+                }
+            }
+            $definition = config('mobile.protocol');
+            $id = InventoryData::insert('mobile_event_protocols', ['event_id' => $event, 'version' => $definition['version'], 'title' => $definition['title'], 'package_snapshot' => ['packages' => $packages]]);
+            $previous = null;
+            foreach ($definition['steps'] as $order => $step) {
+                $previous = InventoryData::insert('mobile_protocol_steps', ['protocol_id' => $id, 'sort_order' => $order + 1, 'title' => $step['title'], 'instructions' => $step['instructions'], 'required' => $step['required'], 'capture_mode' => 'automatic', 'allowed_capture_modes' => ['automatic', 'manual'], 'allow_notes' => true, 'allowed_evidence' => config('mobile.attachment_mimes'), 'dependencies' => $previous ? [$previous] : []]);
+            }
+
+            return InventoryData::get('mobile_event_protocols', $id);
+        });
+    }
+
+    public function progress(object $protocol): array
+    {
+        $steps = DB::table('mobile_protocol_steps')->where('protocol_id', $protocol->id)->where('required', true)->pluck('id');
+        $completed = DB::table('mobile_step_records')->whereIn('step_id', $steps)->pluck('step_id')->merge(DB::table('mobile_step_overrides')->whereIn('step_id', $steps)->pluck('step_id'))->unique()->count();
+
+        return ['completed' => $completed, 'required' => $steps->count()];
+    }
+
+    public function summary(object $event, User $actor): array
+    {
+        DB::table('mobile_sync_seen_events')->updateOrInsert(['user_id' => $actor->id, 'event_id' => $event->id], ['created_at' => now(), 'updated_at' => now()]);
+        $protocol = $this->snapshot($event->id);
+        $receipts = DB::table('event_dispatches')->where('event_id', $event->id)->where('technician_id', $actor->id)->whereIn('status', ['confirmed', 'received', 'closed'])->pluck('id');
+        $statuses = DB::table('technician_receipts')->whereIn('event_dispatch_id', $receipts)->pluck('status');
+
+        return ['id' => $event->id, 'title' => 'Evento de '.$event->client_name, 'starts_at' => MobileContract::utc($event->event_date, config('mobile.event_timezone')), 'venue' => $event->event_address, 'logistics_status' => $event->logistics_status,
+            'receipt_status' => $statuses->contains('quantity_mismatch') ? 'quantity_mismatch' : ($receipts->count() && $statuses->count() === $receipts->count() ? 'received' : 'pending'),
+            'protocol_progress' => $this->progress($protocol), 'assignment' => ['user_id' => $actor->id, 'role' => 'technician'], 'updated_at' => MobileContract::utc($event->updated_at)];
+    }
+
+    public function detail(int $event, User $actor): array
+    {
+        $row = $this->authorize($actor, $event);
+        $protocol = $this->snapshot($event);
+        $packages = InventoryData::json($protocol->package_snapshot)['packages'];
+        $access = app(InventoryAccess::class);
+
+        return $this->summary($row, $actor) + [
+            'package_snapshot' => count($packages) === 1 ? $packages[0] : ['id' => null, 'name' => implode(', ', array_column($packages, 'name')) ?: 'Paquete personalizado', 'description' => null, 'packages' => $packages],
+            'contacts' => $row->phone ? [['name' => $row->client_name, 'phone' => $row->phone]] : [],
+            'requirements' => DB::table('event_requirements')->where('event_id', $event)->orderBy('id')->get()->map(fn ($r) => ['id' => $r->id, 'requirement_type' => $r->requirement_type, 'quantity_required' => MobileContract::quantity(MobileContract::milli($r->quantity_required)), 'status' => $r->status, 'snapshot' => InventoryData::json($r->snapshot)])->all(),
+            'dispatch_ids' => DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->whereIn('status', ['confirmed', 'received', 'closed'])->orderBy('id')->pluck('id')->all(),
+            'protocol' => ['id' => $protocol->id, 'version' => $protocol->version],
+            'permissions' => ['record_steps' => $protocol->status !== 'closed' && $access->allows($actor, 'mobile.record'), 'close' => $protocol->status !== 'closed' && $access->allows($actor, 'mobile.close') && $this->progress($protocol)['completed'] === $this->progress($protocol)['required']],
+        ];
+    }
+
+    public function protocol(int $event, User $actor): array
+    {
+        $this->authorize($actor, $event);
+        $p = $this->snapshot($event);
+        $steps = DB::table('mobile_protocol_steps')->where('protocol_id', $p->id)->orderBy('sort_order')->get()->map(function ($s) use ($actor) {
+            return ['id' => $s->id, 'order' => $s->sort_order, 'title' => $s->title, 'instructions' => $s->instructions, 'required' => (bool) $s->required, 'capture_mode' => $s->capture_mode, 'allowed_capture_modes' => InventoryData::json($s->allowed_capture_modes), 'allow_notes' => (bool) $s->allow_notes, 'allowed_evidence' => InventoryData::json($s->allowed_evidence), 'responsible_user_id' => $s->responsible_user_id, 'dependencies' => InventoryData::json($s->dependencies),
+                'records' => DB::table('mobile_step_records')->where('step_id', $s->id)->get()->map(fn ($r) => $this->record($r, $actor))->all(),
+                'overrides' => DB::table('mobile_step_overrides')->where('step_id', $s->id)->get()->map(fn ($r) => MobileContract::dates((array) $r))->all()];
+        })->all();
+
+        return ['event_id' => $event, 'protocol_id' => $p->id, 'version' => $p->version, 'title' => $p->title, 'status' => $p->status, 'steps' => $steps, 'permissions' => ['override_required_steps' => $this->canOverride($actor)]];
+    }
+
+    public function canOverride(User $actor): bool
+    {
+        $roles = $actor->roles()->pluck('name')->merge([$actor->role?->name]);
+
+        return $roles->intersect(['root', 'admin', 'supervisor'])->isNotEmpty() && DB::table('inventory_permissions')->where('user_id', $actor->id)->where('permission', 'mobile.override')->exists();
+    }
+
+    public function record(object $record, User $actor): array
+    {
+        $data = MobileContract::dates((array) $record);
+        unset($data['original_payload']);
+        $data['can_correct'] = $record->recorded_by === $actor->id && app(InventoryAccess::class)->allows($actor, 'mobile.correct_own');
+
+        return $data;
+    }
+}

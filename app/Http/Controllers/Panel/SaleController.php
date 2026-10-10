@@ -3,103 +3,59 @@
 namespace App\Http\Controllers\Panel;
 
 use App\Http\Controllers\Controller;
-use App\Models\Sale;
+use App\Services\Panel\InventoryPanelView;
+use App\Services\Inventory\InventoryAccess;
+use App\Services\Inventory\InventoryData;
 use Illuminate\Http\Request;
 
 class SaleController extends Controller
 {
-    //
-
-    public function index()
+    public function index(Request $request, InventoryPanelView $panel)
     {
-        $sales = Sale::query()
-            ->latest('created_at')
-            ->latest('id')
-            ->get();
-        $itemActive = 7;
-
-        return view('panel.sales.index', compact('sales', 'itemActive'));
+        return $panel->render($request, 'sales', 'sales');
     }
 
-    public function create()
+    public function create(Request $request, InventoryPanelView $panel)
     {
-        return view('panel.sales.create');
+        app(InventoryAccess::class)->authorize($request->user(), 'sales.manage');
+
+        return $this->index($request, $panel);
+    }
+
+    public function show(Request $request, InventoryPanelView $panel, int $id)
+    {
+        app(InventoryAccess::class)->authorize($request->user(), 'sales.view');
+        InventoryData::get('sales', $id);
+
+        return $this->index($request, $panel);
+    }
+
+    public function edit(Request $request, InventoryPanelView $panel, int $id)
+    {
+        app(InventoryAccess::class)->authorize($request->user(), 'sales.manage');
+        InventoryData::get('sales', $id);
+
+        return $this->index($request, $panel);
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'date' => 'required',
-            'client_name' => 'required',
-            'client_address' => 'required',
-            'client_phone' => 'required',
-            'products_id' => 'required',
-            'products_quantity' => 'required',
-        ]);
+        $result = app(\App\Http\Controllers\API\SaleController::class)->store($request);
 
-        $sale = new Sale;
-        $sale->date = $request->date;
-        $sale->client_name = $request->client_name;
-        $sale->client_address = $request->client_address;
-        $sale->client_phone = $request->client_phone;
-        $sale->save();
-
-        for ($i = 0; $i < count($request->products_id); $i++) {
-            $product_id = $request->products_id[$i];
-            $quantity = $request->products_quantity[$i];
-            $sale->products()->attach($product_id, ['quantity' => $quantity]);
-        }
-
-        return redirect()->route('sales.index');
+        return $request->expectsJson() ? $result : redirect()->route('sales.index');
     }
 
-    public function edit($id)
+    public function update(Request $request, int $id)
     {
-        $sale = Sale::find($id);
+        $result = app(\App\Http\Controllers\API\SaleController::class)->update($request, $id);
 
-        return view('panel.sales.edit', compact('sale'));
+        return $request->expectsJson() ? $result : redirect()->route('sales.show', $id);
     }
 
-    public function update(Request $request, $id)
+    public function destroy(Request $request, int $id)
     {
-        $request->validate([
-            'date' => 'required',
-            'client_name' => 'required',
-            'client_address' => 'required',
-            'client_phone' => 'required',
-            'products_id' => 'required',
-            'products_quantity' => 'required',
-        ]);
+        $result = app(\App\Http\Controllers\API\SaleController::class)->destroy($request, $id);
 
-        $sale = Sale::find($id);
-        $sale->date = $request->date;
-        $sale->client_name = $request->client_name;
-        $sale->client_address = $request->client_address;
-        $sale->client_phone = $request->client_phone;
-        $sale->save();
-
-        $sale->products()->detach();
-        for ($i = 0; $i < count($request->products_id); $i++) {
-            $product_id = $request->products_id[$i];
-            $quantity = $request->products_quantity[$i];
-            $sale->products()->attach($product_id, ['quantity' => $quantity]);
-        }
-
-        return redirect()->route('sales.index');
-    }
-
-    public function destroy($id)
-    {
-        $sale = Sale::find($id);
-        $sale->delete();
-
-        return redirect()->route('sales.index');
-    }
-
-    public function show($id)
-    {
-        $sale = Sale::find($id);
-
-        return view('panel.sales.show', compact('sale'));
+        return $request->expectsJson() ? $result : redirect()->route('sales.index');
     }
 }

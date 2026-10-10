@@ -7,44 +7,39 @@ use DateTime;
 use DateTimeZone;
 use Livewire\Attributes\On;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 class EventList extends Component
 {
-    public $events = [];
+    use WithPagination;
+
     public $selectedDate;
+
     public $todayDate;
 
     public function mount()
     {
         $this->todayDate = $this->getLocalToday();
         $this->selectedDate = $this->todayDate;
-        $this->loadEventsByDate($this->selectedDate);
+        $this->resetPage();
     }
 
     public function render()
     {
-        return view('livewire.panel.events.event-list');
+        return view('livewire.panel.events.event-list', ['events' => Event::with('package')->whereDate('event_date', $this->selectedDate)->orderBy('event_date')->orderBy('id')->paginate(15)]);
     }
 
     #[On('selectDate')]
     public function selectDate($date)
     {
         $this->selectedDate = $date;
-        $this->loadEventsByDate($this->selectedDate);
+        $this->resetPage();
     }
 
     public function showToday()
     {
         $this->selectedDate = $this->todayDate;
-        $this->loadEventsByDate($this->selectedDate);
-    }
-
-    private function loadEventsByDate($date)
-    {
-        $this->events = Event::with(['package'])
-            ->whereDate('event_date', $date)
-            ->orderBy('event_date')
-            ->get();
+        $this->resetPage();
     }
 
     private function getLocalToday()

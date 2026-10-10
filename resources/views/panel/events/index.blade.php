@@ -19,6 +19,12 @@
 @endsection
 
 @section('main-content')
+    @if (app(\App\Services\Inventory\InventoryAccess::class)->allows(auth()->user(), 'events.prepare'))
+    <div class="mx-auto mt-16 max-w-[1680px] px-4 pt-6 sm:px-8">
+        <a href="{{ route('inventory.preparations') }}" class="inline-flex rounded-xl bg-primary-700 px-4 py-3 text-secondary">Preparación de eventos</a>
+    </div>
+    @endif
+
     @php
         $now = \Carbon\Carbon::now('America/Mexico_City');
 
@@ -209,7 +215,10 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-primary-700/60">
-                        @forelse ($events as $event)
+                        @php
+                            $listRows = \App\Support\PanelPagination::collection($events);
+                        @endphp
+                        @forelse ($listRows as $event)
                             @php
                                 $eventDate = \Carbon\Carbon::parse($event->event_date, 'America/Mexico_City');
                                 $packageNames = $event->packages
@@ -345,7 +354,7 @@
 
             <div class="flex flex-col gap-3 border-t border-primary-700/60 px-8 py-5 text-sm text-primary-200 sm:flex-row sm:items-center sm:justify-between">
                 <p>
-                    Mostrando <span class="font-semibold text-on-primary">{{ $events->count() }}</span>
+                    Mostrando <span class="font-semibold text-on-primary">{{ ($listRows ?? \App\Support\PanelPagination::collection($events))->count() }} de {{ $events->count() }}</span>
                     {{ \Illuminate\Support\Str::plural('evento', $events->count()) }} dentro de
                     <span class="font-semibold text-on-primary">{{ $rangeLabel }}</span>.
                 </p>
@@ -357,4 +366,5 @@
             </div>
         </section>
     </div>
+    <x-panel.pagination :paginator="$listRows ?? \App\Support\PanelPagination::collection($events)" />
 @endsection

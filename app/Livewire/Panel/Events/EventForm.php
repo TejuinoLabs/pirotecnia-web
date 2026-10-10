@@ -626,19 +626,29 @@ class EventForm extends Component
             return;
         }
 
-        if (! $this->validateStock()) {
-            $this->showAlert = true;
-            $this->enableSave = false;
-
-            return;
-        }
+        // Coverage is advisory; a contract does not require physical stock now.
+        $this->validateStock();
 
         $this->validate();
-        $event = $this->saveEvent();
-        $this->saveProductsInEvent($event);
-        $this->syncEventEquipments($event);
+        $event = \Illuminate\Support\Facades\DB::transaction(function () {
+            $event = $this->saveEvent();
+            $this->saveProductsInEvent($event);
+            $this->syncEventEquipments($event);
+            $this->snapshotOperationalRequirements($event);
+
+            return $event;
+        });
 
         return redirect()->route('events.show', $event->id);
+    }
+
+    private function snapshotOperationalRequirements(Event $event): void
+    {
+        if (auth()->id() && ! $event->products()->wherePivot('check_almacen', true)->exists()
+            && ! $event->equipments()->wherePivot('check_almacen', true)->exists()) {
+            app(\App\Services\Inventory\EventRequirementService::class)->snapshot($event, auth()->id());
+            app(\App\Services\Inventory\EventCoverageService::class)->coverage($event->id);
+        }
     }
 
     private function processDiscount(): void
@@ -678,9 +688,14 @@ class EventForm extends Component
         }
 
         $this->validate();
-        $event = $this->saveEvent();
-        $this->saveProductsInEvent($event);
-        $this->syncEventEquipments($event);
+        $event = \Illuminate\Support\Facades\DB::transaction(function () {
+            $event = $this->saveEvent();
+            $this->saveProductsInEvent($event);
+            $this->syncEventEquipments($event);
+            $this->snapshotOperationalRequirements($event);
+
+            return $event;
+        });
         $this->showAlert = false;
 
         return redirect()->route('events.show', $event->id);
@@ -1118,12 +1133,18 @@ class EventForm extends Component
 
                 if ($productId > 0) {
                     if (! $inventory->products()->where('products.id', $productId)->exists()) {
-                        $inventory->products()->attach($productId, [
-                            'quantity' => max($this->parseNumberInput($row['inventory_quantity'] ?? 0), (float) $quantity),
-                            'price' => $this->parseNumberInput($row['inventory_price'] ?? 0),
-                            'check_employee' => false,
-                            'check_almacen' => false,
-                        ]);
+                        $location = \Illuminate\Support\Facades\DB::table('inventory_locations')->where('legacy_inventory_id', $inventory->id)->whereNotNull('adopted_at')->first();
+                        if ($location) {
+                            // New contracts add demand; inventory must come from a receipt or authorized adjustment.
+                            $inventory->products()->attach($productId, ['quantity' => 0, 'price' => $this->parseNumberInput($row['inventory_price'] ?? 0)]);
+                        } else {
+                            $inventory->products()->attach($productId, [
+                                'quantity' => max($this->parseNumberInput($row['inventory_quantity'] ?? 0), (float) $quantity),
+                                'price' => $this->parseNumberInput($row['inventory_price'] ?? 0),
+                                'check_employee' => false,
+                                'check_almacen' => false,
+                            ]);
+                        }
                     }
 
                     return $row;
@@ -1147,6 +1168,9 @@ class EventForm extends Component
                 ]);
 
                 $inventoryQuantity = max($this->parseNumberInput($row['inventory_quantity'] ?? 0), (float) $quantity);
+                if (\Illuminate\Support\Facades\DB::table('inventory_locations')->where('legacy_inventory_id', $inventory->id)->whereNotNull('adopted_at')->exists()) {
+                    $inventoryQuantity = 0;
+                }
                 $inventoryPrice = $this->parseNumberInput($row['inventory_price'] ?? 0);
 
                 $inventory->products()->attach($product->id, [
