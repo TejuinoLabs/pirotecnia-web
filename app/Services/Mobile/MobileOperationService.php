@@ -49,6 +49,9 @@ class MobileOperationService
             if (! in_array($data['capture_mode'], InventoryData::json($s->allowed_capture_modes), true)) {
                 throw ValidationException::withMessages(['capture_mode' => ['Modo de captura no permitido.']]);
             }
+            if ($s->requires_notes || app(MobileProtocolService::class)->milestone($s) !== null) {
+                app(MobileProtocolService::class)->validateNotes($data['notes'] ?? null);
+            }
             if (! $s->allow_notes && ! empty($data['notes'])) {
                 throw ValidationException::withMessages(['notes' => ['El paso no admite notas.']]);
             }
@@ -57,7 +60,7 @@ class MobileOperationService
                 $previous = DB::table('mobile_step_records')->where('step_id', $dependency)->first();
                 MobileContract::conflict(! $previous || $previous->occurred_at <= \Carbon\CarbonImmutable::parse($data['occurred_at'])->setTimezone(config('app.timezone'))->toDateTimeString(), 'El hito es anterior a su dependencia.', 'STEP_ORDER_CONFLICT');
             }
-            if ($s->sort_order === 2) {
+            if (app(MobileProtocolService::class)->isReceiptReview($s)) {
                 MobileContract::conflict(! DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->where('status', 'confirmed')->exists(), 'Registra la recepción de tus despachos antes de este hito.', 'RECEIPT_PENDING');
             }
             $values = array_merge($data, $this->times($data), ['event_id' => $event, 'step_id' => $step, 'recorded_by' => $actor->id, 'original_payload' => $data, 'attachment_ids' => $data['attachment_ids'] ?? []]);
@@ -68,6 +71,7 @@ class MobileOperationService
             }
             app(MobileAttachmentService::class)->link($files, $event, $actor->id, 'step_record', $id, InventoryData::json($s->allowed_evidence));
             app(AuditService::class)->record($actor->id, 'mobile_step_recorded', 'mobile_step_record', $id, $data);
+            app(MobileProtocolService::class)->sync($protocol);
             $this->touch($event);
 
             return ['data' => app(TechnicianEventService::class)->record(InventoryData::get('mobile_step_records', $id), $actor)];
@@ -101,11 +105,15 @@ class MobileOperationService
                 if (! $step->allow_notes && ! empty($data['notes'])) {
                     throw ValidationException::withMessages(['notes' => ['El paso no admite notas.']]);
                 }
+                if ($step->requires_notes || app(MobileProtocolService::class)->milestone($step) !== null) {
+                    app(MobileProtocolService::class)->validateNotes($data['notes']);
+                }
                 $values['notes'] = $data['notes'];
             }
             InventoryData::update('mobile_step_records', $id, $values);
             InventoryData::insert('mobile_record_corrections', ['record_id' => $id, 'actor_id' => $actor->id, 'client_operation_id' => $data['client_operation_id'], 'revision' => $values['revision'], 'reason' => $data['correction_reason'], 'before' => (array) $record, 'after' => (array) InventoryData::get('mobile_step_records', $id), 'occurred_at' => now()]);
             app(AuditService::class)->record($actor->id, 'mobile_step_corrected', 'mobile_step_record', $id, $data, (array) $record);
+            app(MobileProtocolService::class)->sync(app(TechnicianEventService::class)->snapshot($record->event_id));
             $this->touch($record->event_id);
 
             return ['data' => app(TechnicianEventService::class)->record(InventoryData::get('mobile_step_records', $id), $actor)];
@@ -143,6 +151,7 @@ class MobileOperationService
             MobileContract::conflict(! DB::table('mobile_step_records')->where('step_id', $step)->exists() && ! DB::table('mobile_step_overrides')->where('step_id', $step)->exists(), 'El paso ya está registrado.', 'STEP_ALREADY_RECORDED');
             $id = InventoryData::insert('mobile_step_overrides', ['event_id' => $event, 'step_id' => $step, 'protocol_version' => $p->version, 'actor_id' => $actor->id, 'client_operation_id' => $data['client_operation_id'], 'reason' => $data['reason']]);
             app(AuditService::class)->record($actor->id, 'mobile_step_overridden', 'mobile_step_override', $id, $data);
+            app(MobileProtocolService::class)->sync($p);
             $this->touch($event);
 
             return ['data' => MobileContract::dates((array) InventoryData::get('mobile_step_overrides', $id))];
@@ -153,17 +162,21 @@ class MobileOperationService
     {
         return DB::transaction(function () use ($event, $data, $actor) {
             $p = $this->context($event, $actor, 'mobile.close', $data['protocol_version']);
-            $this->times($data);
+            app(MobileProtocolService::class)->validateNotes($data['notes'] ?? null);
+            $times = $this->times($data);
+            $latest = DB::table('mobile_step_records')->where('event_id', $event)->max('occurred_at');
+            MobileContract::conflict(! $latest || $times['occurred_at'] >= $latest, 'La finalización es anterior a un hito registrado.', 'STEP_ORDER_CONFLICT');
             $progress = app(TechnicianEventService::class)->progress($p);
             MobileContract::conflict($progress['completed'] === $progress['required'], 'Faltan pasos obligatorios.', 'REQUIRED_STEPS_PENDING');
             MobileContract::conflict(! DB::table('mobile_incidents')->where('event_id', $event)->whereIn('severity', ['high', 'critical'])->where('status', '!=', 'resolved')->exists(), 'Hay incidencias críticas sin resolver.', 'CRITICAL_INCIDENTS_PENDING');
             MobileContract::conflict(! DB::table('event_dispatches')->where('event_id', $event)->whereIn('status', ['draft', 'confirmed'])->exists(), 'Hay despachos sin recepción.', 'RECEIPT_PENDING');
-            InventoryData::update('mobile_event_protocols', $p->id, ['status' => 'closed', 'closed_at' => now(), 'closed_by' => $actor->id]);
+            InventoryData::update('mobile_event_protocols', $p->id, ['status' => 'closed', 'closed_at' => now(), 'closed_by' => $actor->id, 'closing_notes' => trim($data['notes']), 'closure_occurred_at' => $times['occurred_at'], 'closure_recorded_at' => $times['recorded_at']]);
             $open = DB::table('event_dispatches')->where('event_id', $event)->where('status', '!=', 'closed')->exists();
+            app(MobileProtocolService::class)->sync(InventoryData::get('mobile_event_protocols', $p->id));
             InventoryData::update('events', $event, ['logistics_status' => $open ? 'awaiting_return' : 'closed']);
             app(AuditService::class)->record($actor->id, 'mobile_event_closed', 'event', $event, $data);
 
-            return ['data' => ['event_id' => $event, 'status' => 'closed', 'logistics_status' => $open ? 'awaiting_return' : 'closed', 'closed_at' => MobileContract::utc(now()), 'closed_by' => $actor->id]];
+            return ['data' => ['event_id' => $event, 'status' => 'closed', 'operational_status' => app(MobileProtocolService::class)->state($p)['operational_status'], 'logistics_status' => $open ? 'awaiting_return' : 'closed', 'closed_at' => MobileContract::utc(now()), 'closed_by' => $actor->id]];
         });
     }
 }

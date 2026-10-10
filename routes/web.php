@@ -57,6 +57,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/panel/purchases', [PurchaseController::class, 'index'])->name('purchases.index');
     Route::get('/panel/sales', [SaleController::class, 'index'])->name('sales.index');
     Route::get('/settings', [SettingsController::class, 'indexSettings'])->name('settings.index');
+    Route::get('/settings/events/{event}/protocol-upgrade', [\App\Http\Controllers\Panel\MobileProtocolUpgradeController::class, 'show'])->whereNumber('event')->name('settings.protocol-upgrade');
+    Route::post('/settings/events/{event}/protocol-upgrade', [\App\Http\Controllers\Panel\MobileProtocolUpgradeController::class, 'store'])->whereNumber('event')->name('settings.protocol-upgrade.store');
     Route::get('/settings/setup', [\App\Http\Controllers\Panel\SetupWizardController::class, 'index'])->name('settings.setup');
     Route::post('/settings/setup', [\App\Http\Controllers\Panel\SetupWizardController::class, 'store'])->name('settings.setup.store');
     Route::get('/settings/menu', [MenuController::class, 'index'])->name('settings.menu.index');

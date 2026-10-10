@@ -41,7 +41,7 @@ class MobileSyncService
         }
         $protocol = DB::table('mobile_event_protocols')->where('event_id', $event)->first();
         if ($protocol?->closed_at) {
-            $append('closure', $protocol, 'Bitácora cerrada', $protocol->closed_at, $protocol->updated_at, $protocol->closed_by);
+            $append('closure', $protocol, 'Bitácora cerrada', $protocol->closure_occurred_at ?? $protocol->closed_at, $protocol->closure_recorded_at ?? $protocol->updated_at, $protocol->closed_by);
         }
         $entries = $entries->sort(fn ($a, $b) => [$a['occurred_at'], $a['id']] <=> [$b['occurred_at'], $b['id']])->values();
         $page = LengthAwarePaginator::resolveCurrentPage();

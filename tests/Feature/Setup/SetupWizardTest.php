@@ -100,7 +100,7 @@ class SetupWizardTest extends TestCase
             $this->postJson($base.'/steps/'.$step['id'].'/records', ['client_operation_id' => $key, 'protocol_version' => $protocol['version'], 'capture_mode' => 'manual', 'manual_reason' => 'Captura al finalizar la actividad', 'notes' => 'Actividad realizada sin despacho', 'occurred_at' => now()->subMinute()->utc()->format('Y-m-d\TH:i:s\Z'), 'recorded_at' => now()->utc()->format('Y-m-d\TH:i:s\Z')], ['Idempotency-Key' => $key])->assertSuccessful();
         }
         $key = (string) Str::uuid();
-        $this->postJson($base.'/close', ['client_operation_id' => $key, 'protocol_version' => $protocol['version'], 'occurred_at' => now()->subMinute()->utc()->format('Y-m-d\TH:i:s\Z'), 'recorded_at' => now()->utc()->format('Y-m-d\TH:i:s\Z')], ['Idempotency-Key' => $key])->assertSuccessful();
+        $this->postJson($base.'/close', ['client_operation_id' => $key, 'protocol_version' => $protocol['version'], 'notes' => 'Evento concluido sin despachos', 'occurred_at' => now()->subMinute()->utc()->format('Y-m-d\TH:i:s\Z'), 'recorded_at' => now()->utc()->format('Y-m-d\TH:i:s\Z')], ['Idempotency-Key' => $key])->assertSuccessful();
         $this->assertDatabaseCount('inventory_movements', 0);
         $this->assertDatabaseCount('event_dispatches', 0);
     }

@@ -18,7 +18,7 @@ class InventoryPanelView
             'sales' => 'sales.view', 'preparation', 'events' => 'events.prepare', 'purchases' => 'purchases.view', 'audit' => 'audit.view', 'requirements' => 'events.view', default => 'inventory.view'
         };
         $access->authorize($request->user(), $required);
-        $permissions = collect(['sales.view', 'sales.manage', 'inventory.view', 'inventory.adjust', 'inventory.dispatch', 'inventory.return', 'inventory.override_protected', 'purchases.view', 'purchases.create', 'purchases.receive', 'events.view', 'events.manage', 'events.prepare', 'packages.manage', 'rules.manage', 'audit.view'])->filter(fn ($p) => $access->allows($request->user(), $p))->values()->all();
+        $permissions = collect(['sales.view', 'sales.manage', 'inventory.view', 'inventory.adjust', 'inventory.dispatch', 'inventory.return', 'inventory.override_protected', 'purchases.view', 'purchases.create', 'purchases.receive', 'events.view', 'events.manage', 'events.prepare', 'packages.manage', 'rules.manage', 'audit.view', 'mobile.protocol.manage'])->filter(fn ($p) => $access->allows($request->user(), $p))->values()->all();
         $catalogs = [];
         foreach (['categories', 'effects', 'colors', 'attribute_definitions', 'inventory_locations', 'product_profiles', 'product_roles', 'event_types'] as $table) {
             $catalogs[$table] = DB::table($table)->get(['id', 'name'])->toArray();

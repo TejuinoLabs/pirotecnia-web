@@ -143,9 +143,9 @@ class TechnicianMobileApiTest extends TestCase
         $this->getJson('/api/technician/events?status=upcoming&search=Salón')->assertOk()->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.assignment.user_id', $this->tech->id);
         $original = $this->getJson($this->url())->assertOk()->assertJsonPath('data.package_snapshot.name', 'Paquete firmado')->json('data');
         $this->package->update(['name' => 'Nuevo nombre']);
-        config(['mobile.protocol.version' => 2, 'mobile.protocol.steps' => []]);
-        $this->getJson($this->url())->assertOk()->assertJsonPath('data.package_snapshot.name', 'Paquete firmado')->assertJsonPath('data.protocol.version', 1);
-        $this->getJson($this->url('/protocol'))->assertOk()->assertJsonCount(3, 'data.steps');
+        config(['mobile.protocol.version' => 99, 'mobile.protocol.steps' => []]);
+        $this->getJson($this->url())->assertOk()->assertJsonPath('data.package_snapshot.name', 'Paquete firmado')->assertJsonPath('data.protocol.version', 2);
+        $this->getJson($this->url('/protocol'))->assertOk()->assertJsonCount(5, 'data.steps');
         $this->assertSame('3.000', $original['requirements'][0]['quantity_required']);
         $this->getJson('/api/technician/events?from=invalid')->assertUnprocessable();
         $this->getJson('/api/technician/events?from=2026-10-12T00:00:00Z&to=2026-10-11T00:00:00Z')->assertUnprocessable();
@@ -328,7 +328,7 @@ class TechnicianMobileApiTest extends TestCase
         $migration->up();
         $this->assertTrue(\Illuminate\Support\Facades\Schema::hasIndex('mobile_return_declaration_items', ['declaration_id', 'dispatch_item_id'], 'unique'));
         $this->assertDatabaseHas('mobile_event_protocols', ['id' => $protocol->id, 'event_id' => $this->event->id]);
-        $this->assertDatabaseCount('mobile_protocol_steps', 3);
+        $this->assertDatabaseCount('mobile_protocol_steps', 5);
     }
 
     public function test_mobile_rate_limit_includes_retry_after(): void
@@ -352,7 +352,7 @@ class TechnicianMobileApiTest extends TestCase
         $this->actingAs($this->tech, 'api');
         $this->receive()->assertOk();
         $this->write('POST', $this->url('/incidents'), [...$this->times(), 'category' => 'safety', 'severity' => 'critical', 'description' => 'Requiere revisión del responsable'])->assertCreated();
-        $this->write('POST', $this->url('/close'), [...$this->times(), 'protocol_version' => $p['version']])->assertConflict()->assertJsonPath('code', 'CRITICAL_INCIDENTS_PENDING');
+        $this->write('POST', $this->url('/close'), [...$this->times(), 'protocol_version' => $p['version'], 'notes' => 'Cierre con comentarios'])->assertConflict()->assertJsonPath('code', 'CRITICAL_INCIDENTS_PENDING');
     }
 
     public function test_override_requires_explicit_supervisor_permission_and_current_assignment(): void

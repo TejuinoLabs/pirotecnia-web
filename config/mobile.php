@@ -9,12 +9,14 @@ return [
     'attachment_mimes' => ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
     // Administrative milestones only. This snapshot never describes equipment activation.
     'protocol' => [
-        'version' => 1,
+        'version' => 2,
         'title' => 'Bitácora operativa',
         'steps' => [
-            ['title' => 'Llegada al lugar', 'instructions' => 'Registrar la llegada del responsable asignado.', 'required' => true],
-            ['title' => 'Recepción revisada', 'instructions' => 'Registrar la revisión administrativa de la recepción y sus diferencias.', 'required' => true],
-            ['title' => 'Conclusión de actividades', 'instructions' => 'Registrar la conclusión administrativa y las observaciones del responsable.', 'required' => true],
+            ['milestone_code' => 'arrived', 'requires_notes' => true, 'title' => 'Llegada al lugar', 'instructions' => 'Registrar la llegada del responsable asignado.', 'required' => true],
+            ['validation_rule' => 'receipt_review', 'title' => 'Recepción revisada', 'instructions' => 'Registrar la revisión administrativa de la recepción y sus diferencias.', 'required' => true],
+            ['milestone_code' => 'installed', 'requires_notes' => true, 'title' => 'Instalación terminada', 'instructions' => 'Registrar que la instalación ya fue terminada y sus observaciones.', 'required' => true],
+            ['milestone_code' => 'detonated', 'requires_notes' => true, 'title' => 'Detonación registrada', 'instructions' => 'Registrar el hecho ya realizado y sus observaciones. Este registro no activa equipos.', 'required' => true],
+            ['milestone_code' => 'finished', 'requires_notes' => true, 'title' => 'Evento finalizado', 'instructions' => 'Registrar la conclusión de actividades y los comentarios finales.', 'required' => true],
         ],
     ],
 ];

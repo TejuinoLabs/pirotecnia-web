@@ -365,6 +365,9 @@ if (root) {
     }
     async function preparation() {
         const path = `events/${eventId}`; const data = await api(`${path}/preparation`); title.textContent = `Evento #${eventId} · ${data.event.client_name} · ${pretty(data.event.logistics_status)}`;
+        if (permissions.has('mobile.protocol.manage')) { const link = el('a', 'Revisar / actualizar seguimiento técnico', 'rounded-xl bg-primary-700 px-4 py-3 font-semibold hover:bg-primary-600'); link.href = `/settings/events/${eventId}/protocol-upgrade`; toolbar.append(link); }
+        const operationalLabels = { not_started: 'Sin iniciar', arrived: 'Llegada registrada', installed: 'Instalación terminada', detonated: 'Detonación registrada', finished: 'Evento finalizado' };
+        content.append(el('p', `Avance técnico: ${operationalLabels[data.event.operational_status] || 'Sin iniciar'}`, 'text-primary-200'));
         content.append(el('p', `${data.percent_completed}% asignado · ${pretty(data.coverage.status)}`, 'text-primary-200'));
         if (!data.requirements.length) canButton('events.prepare', 'Importar requerimientos del evento', async () => { await api(`${path}/requirements/snapshot`, 'POST', {}); await load(); });
         canButton('events.prepare', 'Iniciar preparación', async () => { await api(`${path}/preparation/start`, 'POST', {}); await load(); });
