@@ -57,6 +57,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/panel/purchases', [PurchaseController::class, 'index'])->name('purchases.index');
     Route::get('/panel/sales', [SaleController::class, 'index'])->name('sales.index');
     Route::get('/settings', [SettingsController::class, 'indexSettings'])->name('settings.index');
+    Route::get('/settings/setup', [\App\Http\Controllers\Panel\SetupWizardController::class, 'index'])->name('settings.setup');
+    Route::post('/settings/setup', [\App\Http\Controllers\Panel\SetupWizardController::class, 'store'])->name('settings.setup.store');
     Route::get('/settings/menu', [MenuController::class, 'index'])->name('settings.menu.index');
     Route::get('/settings/packages', [PackageController::class, 'index'])->name('settings.packages.index');
     Route::get('/settings/products', [\App\Http\Controllers\Panel\InventorySettingsController::class, 'index'])->defaults('section', 'products')->name('settings.products.index');

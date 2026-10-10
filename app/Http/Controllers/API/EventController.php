@@ -27,7 +27,9 @@ class EventController extends Controller
 
     public function getEventsByEmployee(Request $request)
     {
-        abort_unless($request->user()->employee, 403, 'No tienes un empleado asociado.');
+        if (! $request->user()->employee) {
+            return response()->success(collect(['total' => 0, 'total_pages' => 1, 'current_page' => max(1, (int) $request->input('page', 1)), 'per_page' => 10, 'events' => []]), 200);
+        }
         $id = $request->user()->employee->id;
         $events = app(GetEventsByEmployee::class)->execute($id, $request->get('page', 1));
 

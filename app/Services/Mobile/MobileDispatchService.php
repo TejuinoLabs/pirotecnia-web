@@ -44,8 +44,7 @@ class MobileDispatchService
     {
         app(TechnicianEventService::class)->authorize($actor, $event);
         $ids = DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->whereIn('status', ['confirmed', 'received', 'closed'])->orderBy('id')->pluck('id');
-        abort_if($ids->isEmpty(), 404);
 
-        return ['dispatches' => $ids->map(fn ($id) => $this->show($id, $actor))->all()];
+        return ['dispatches' => $ids->map(fn ($id) => $this->show($id, $actor))->all(), 'state' => $ids->isEmpty() ? 'pending_dispatch' : 'available', 'message' => $ids->isEmpty() ? 'Este evento todavía no tiene despachos asignados.' : null];
     }
 }

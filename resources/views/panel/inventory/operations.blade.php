@@ -22,6 +22,11 @@
         <p class="mt-3 text-primary-200">{{ match ($area) { 'settings' => 'Administra los catálogos y las reglas del sistema.', 'purchases' => 'Registra órdenes y recibe mercancía en almacén.', 'events' => 'Asigna productos, confirma el surtido y registra entregas y devoluciones.', default => 'Consulta existencias, proyecciones y movimientos de inventario.' } }}</p>
         @include('panel.inventory.navigation')
     </header>
+    @if ($section === 'inventory' && !\Illuminate\Support\Facades\DB::table('inventory_balances')->where('quantity', '>', 0)->exists())
+    <aside class="rounded-2xl border border-secondary/40 bg-primary-800 p-6"><h2 class="text-xl font-bold">Todavía no hay existencias registradas</h2><p class="mt-2 text-primary-200">Puedes seguir trabajando con eventos y catálogos. Cuando cuentes tus productos, registra la carga inicial o recibe una compra en la ubicación correspondiente.</p>
+        @if(app(\App\Services\Inventory\InventoryAccess::class)->allows(auth()->user(), 'system.setup'))<a href="{{ route('settings.setup') }}" class="mt-4 inline-block font-semibold text-secondary">Abrir asistente de configuración →</a>@endif
+    </aside>
+    @endif
     @if ($summary)
     <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Indicadores de inventario">
         @foreach (['inventory_value' => 'Valor del inventario', 'low_stock_products' => 'Productos bajo mínimo', 'upcoming_events' => 'Eventos próximos (hasta 50)', 'deficit_events' => 'Eventos con déficit', 'pending_purchases' => 'Compras pendientes', 'equipment_outside' => 'Equipo fuera de almacén', 'stand_stock' => 'Mercancía en puestos', 'protected_low_products' => 'Productos protegidos bajos'] as $key => $label)

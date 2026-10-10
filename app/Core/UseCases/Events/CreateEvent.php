@@ -36,7 +36,6 @@ class CreateEvent
                     $lowInventory = $this->checkLowInventoryByProducts->execute($event->products);
                     $event->lowInventoryProducts = $lowInventory;
                 }
-                throw new \Exception('Event could not be created (Simulated error) event: '.json_encode($event));
 
                 return $event;
             });

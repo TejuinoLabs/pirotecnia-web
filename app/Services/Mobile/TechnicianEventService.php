@@ -68,6 +68,7 @@ class TechnicianEventService
 
         return ['id' => $event->id, 'title' => 'Evento de '.$event->client_name, 'starts_at' => MobileContract::utc($event->event_date, config('mobile.event_timezone')), 'venue' => $event->event_address, 'logistics_status' => $event->logistics_status,
             'receipt_status' => $statuses->contains('quantity_mismatch') ? 'quantity_mismatch' : ($receipts->count() && $statuses->count() === $receipts->count() ? 'received' : 'pending'),
+            'dispatch_status' => $receipts->isEmpty() ? 'pending_dispatch' : 'available',
             'protocol_progress' => $this->progress($protocol), 'assignment' => ['user_id' => $actor->id, 'role' => 'technician'], 'updated_at' => MobileContract::utc($event->updated_at)];
     }
 
@@ -84,7 +85,7 @@ class TechnicianEventService
             'requirements' => DB::table('event_requirements')->where('event_id', $event)->orderBy('id')->get()->map(fn ($r) => ['id' => $r->id, 'requirement_type' => $r->requirement_type, 'quantity_required' => MobileContract::quantity(MobileContract::milli($r->quantity_required)), 'status' => $r->status, 'snapshot' => InventoryData::json($r->snapshot)])->all(),
             'dispatch_ids' => DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->whereIn('status', ['confirmed', 'received', 'closed'])->orderBy('id')->pluck('id')->all(),
             'protocol' => ['id' => $protocol->id, 'version' => $protocol->version],
-            'permissions' => ['record_steps' => $protocol->status !== 'closed' && $access->allows($actor, 'mobile.record'), 'close' => $protocol->status !== 'closed' && $access->allows($actor, 'mobile.close') && $this->progress($protocol)['completed'] === $this->progress($protocol)['required']],
+            'permissions' => ['receive_dispatch' => $access->allows($actor, 'mobile.receive') && DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->where('status', 'confirmed')->exists(), 'declare_return' => $access->allows($actor, 'mobile.return') && DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->where('status', 'received')->exists(), 'record_steps' => $protocol->status !== 'closed' && $access->allows($actor, 'mobile.record'), 'close' => $protocol->status !== 'closed' && $access->allows($actor, 'mobile.close') && $this->progress($protocol)['completed'] === $this->progress($protocol)['required']],
         ];
     }
 

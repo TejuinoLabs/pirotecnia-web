@@ -130,7 +130,7 @@ class TechnicianMobileApiTest extends TestCase
             $this->getJson($this->url($suffix))->assertForbidden();
         }
         $this->getJson('/api/event/'.$this->event->id)->assertForbidden();
-        $this->getJson('/api/employee-events')->assertForbidden();
+        $this->getJson('/api/employee-events')->assertOk()->assertJsonPath('data.total', 0);
         $this->write('POST', $this->url('/incidents'), [...$this->times(), 'category' => 'other', 'severity' => 'low', 'description' => 'Ajeno'])->assertForbidden();
         $this->receive()->assertForbidden();
         $this->assertDatabaseCount('mobile_incidents', 0);

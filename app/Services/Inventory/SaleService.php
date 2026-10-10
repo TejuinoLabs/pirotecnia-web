@@ -15,7 +15,7 @@ class SaleService
             'client_type_id' => ['nullable', 'integer', 'exists:client_types,id'],
             'client_name' => ['required', 'string', 'max:255'], 'client_phone' => ['nullable', 'string', 'max:255'],
             'client_email' => ['nullable', 'email', 'max:255'], 'client_address' => ['nullable', 'string', 'max:255'],
-            'warehouse_location_id' => ['required', 'integer', 'exists:inventory_locations,id'],
+            'warehouse_location_id' => ['required_if:status,completed', 'nullable', 'integer', 'exists:inventory_locations,id'],
             'status' => ['required', 'in:draft,completed'], 'notes' => ['nullable', 'string', 'max:2000'],
             'discount' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'], 'tax' => ['nullable', 'numeric', 'min:0', 'decimal:0,2'],
             'items' => ['required', 'array', 'min:1'], 'items.*' => ['array:product_id,quantity,unit_price'],
@@ -35,8 +35,11 @@ class SaleService
                 InventoryData::assert($old->uses_operational_inventory && in_array($old->status, ['draft', 'completed'], true), 'Esta venta no admite edición.');
                 InventoryData::assert($old->status !== 'completed' || $data['status'] === 'completed', 'Una venta finalizada se cancela; no vuelve a borrador.');
             }
-            $location = InventoryData::get('inventory_locations', $data['warehouse_location_id']);
-            app(InventoryLocationService::class)->assertStorage($location);
+            $data['warehouse_location_id'] = $data['warehouse_location_id'] ?? null;
+            $location = $data['warehouse_location_id'] ? InventoryData::get('inventory_locations', $data['warehouse_location_id']) : null;
+            if ($location) {
+                app(InventoryLocationService::class)->assertStorage($location);
+            }
             $ids = collect($data['items'])->pluck('product_id');
             if ($id) {
                 $ids = $ids->merge(DB::table('operational_sale_items')->where('sale_id', $id)->pluck('product_id'));

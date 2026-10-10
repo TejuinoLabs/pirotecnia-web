@@ -6,6 +6,9 @@
         <h1 class="text-4xl font-extrabold text-on-primary">Configuración</h1>
         <p class="mt-3 text-lg text-primary-200">Administra los catálogos y parámetros del sistema.</p>
     </header>
+    @if(app(\App\Services\Inventory\InventoryAccess::class)->allows(auth()->user(), 'system.setup'))
+    <a href="{{ route('settings.setup') }}" class="block rounded-2xl border border-secondary/40 bg-primary-800 p-6"><h2 class="text-xl font-bold text-secondary">Asistente de configuración inicial →</h2><p class="mt-2 text-primary-200">Configura catálogos, ubicaciones, técnicos y eventos con ejemplos. Puedes comenzar sin inventario.</p></a>
+    @endif
     <section class="grid gap-6 md:grid-cols-2 lg:grid-cols-3" aria-label="Catálogos de configuración">
         @foreach ($modules as $module)
         <article class="flex flex-col rounded-2xl border border-primary-700 bg-primary-800 p-8">
