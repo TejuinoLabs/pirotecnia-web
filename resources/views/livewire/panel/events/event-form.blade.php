@@ -5,8 +5,14 @@
     $labelClass = 'text-[11px] font-semibold uppercase tracking-[0.24em] text-primary-200';
     $inputClass =
         'w-full rounded-2xl border border-primary-600/40 bg-primary-900/70 px-4 py-3 text-sm text-on-primary placeholder:text-primary-300 transition focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20';
-    $textareaClass = $inputClass . ' min-h-28';
-    $errorClass = 'text-xs font-semibold text-secondary';
+    $errorClass = 'text-xs font-semibold text-red-400';
+    $fieldClass = fn ($field) => $errors->has($field)
+        ? str_replace(
+            ['border-primary-600/40', 'focus:border-accent', 'focus:ring-accent/20'],
+            ['border-red-500', 'focus:border-red-500', 'focus:ring-red-500/20'],
+            $inputClass
+        )
+        : $inputClass;
 @endphp
 
 <div class="space-y-6">
@@ -32,6 +38,12 @@
     <form class="space-y-6" method="POST" wire:submit.prevent="save">
         @csrf
 
+        @if ($errors->any())
+            <div class="rounded-2xl border border-red-500 bg-red-500/10 p-4 text-sm font-semibold text-red-400" role="alert">
+                Revisa los campos marcados en rojo antes de continuar.
+            </div>
+        @endif
+
         <section class="{{ $sectionClass }}">
             <div class="{{ $sectionHeaderClass }}">
                 <div>
@@ -46,18 +58,18 @@
 
             <div class="grid gap-5 md:grid-cols-2">
                 <div class="space-y-2">
-                    <label class="{{ $labelClass }}" for="phone">Teléfono</label>
-                    <input class="{{ $inputClass }}" id="phone" placeholder="55 0000 0000" type="text"
-                        wire:model="phone">
+                    <label class="{{ $labelClass }}" for="phone">Teléfono <span class="text-red-400">*</span></label>
+                    <input class="{{ $fieldClass('phone') }}" id="phone" placeholder="55 0000 0000" type="text"
+                        wire:model="phone" aria-invalid="{{ $errors->has('phone') ? 'true' : 'false' }}">
                     @error('phone')
                         <p class="{{ $errorClass }}">{{ $message }}</p>
                     @enderror
                 </div>
 
                 <div class="space-y-2">
-                    <label class="{{ $labelClass }}" for="client_name">Nombre del cliente</label>
-                    <input class="{{ $inputClass }}" id="client_name" placeholder="Ej. Juan Pérez" type="text"
-                        wire:model="client_name">
+                    <label class="{{ $labelClass }}" for="client_name">Nombre del cliente <span class="text-red-400">*</span></label>
+                    <input class="{{ $fieldClass('client_name') }}" id="client_name" placeholder="Ej. Juan Pérez" type="text"
+                        wire:model="client_name" aria-invalid="{{ $errors->has('client_name') ? 'true' : 'false' }}">
                     @error('client_name')
                         <p class="{{ $errorClass }}">{{ $message }}</p>
                     @enderror
@@ -65,9 +77,9 @@
 
                 <div class="space-y-2 md:col-span-2">
                     <label class="{{ $labelClass }}" for="client_address">Dirección del cliente</label>
-                    <input class="{{ $inputClass }}" id="client_address"
+                    <input class="{{ $fieldClass('client_address') }}" id="client_address"
                         placeholder="Calle, número, colonia y ciudad del cliente" type="text"
-                        wire:model="client_address">
+                        wire:model="client_address" aria-invalid="{{ $errors->has('client_address') ? 'true' : 'false' }}">
                     @error('client_address')
                         <p class="{{ $errorClass }}">{{ $message }}</p>
                     @enderror
@@ -89,15 +101,15 @@
             <div class="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
                 <div class="space-y-2">
                     <label class="{{ $labelClass }}" for="date">Fecha de registro</label>
-                    <input class="{{ $inputClass }}" id="date" type="date" wire:model="date" disabled>
+                    <input class="{{ $fieldClass('date') }}" id="date" type="date" wire:model="date" disabled aria-invalid="{{ $errors->has('date') ? 'true' : 'false' }}">
                     @error('date')
                         <p class="{{ $errorClass }}">{{ $message }}</p>
                     @enderror
                 </div>
 
                 <div class="space-y-2">
-                    <label class="{{ $labelClass }}" for="event_date">Fecha del evento</label>
-                    <input class="{{ $inputClass }}" id="event_date" type="date" wire:model="event_date">
+                    <label class="{{ $labelClass }}" for="event_date">Fecha del evento <span class="text-red-400">*</span></label>
+                    <input class="{{ $fieldClass('event_date') }}" id="event_date" type="date" wire:model="event_date" aria-invalid="{{ $errors->has('event_date') ? 'true' : 'false' }}">
                     <p class="text-xs text-primary-200">
                         Si capturas una fecha anterior a hoy, el sistema te pedirá confirmación antes de guardar.
                     </p>
@@ -107,17 +119,17 @@
                 </div>
 
                 <div class="space-y-2">
-                    <label class="{{ $labelClass }}" for="event_time">Hora del evento</label>
-                    <input class="{{ $inputClass }}" id="event_time" type="time" wire:model="event_time">
+                    <label class="{{ $labelClass }}" for="event_time">Hora del evento <span class="text-red-400">*</span></label>
+                    <input class="{{ $fieldClass('event_time') }}" id="event_time" type="time" wire:model="event_time" aria-invalid="{{ $errors->has('event_time') ? 'true' : 'false' }}">
                     @error('event_time')
                         <p class="{{ $errorClass }}">{{ $message }}</p>
                     @enderror
                 </div>
 
                 <div class="space-y-2">
-                    <label class="{{ $labelClass }}" for="event_type_id">Tipo de evento</label>
-                    <select class="{{ $inputClass }} appearance-none" id="event_type_id"
-                        wire:model.live="event_type_id">
+                    <label class="{{ $labelClass }}" for="event_type_id">Tipo de evento <span class="text-red-400">*</span></label>
+                    <select class="{{ $fieldClass('event_type_id') }} appearance-none" id="event_type_id"
+                        wire:model.live="event_type_id" aria-invalid="{{ $errors->has('event_type_id') ? 'true' : 'false' }}">
                         <option value="">Seleccione un tipo de evento</option>
                         @foreach ($eventTypes as $eventType)
                             <option value="{{ $eventType->id }}">{{ $eventType->name }}</option>
@@ -129,10 +141,10 @@
                 </div>
 
                 <div class="space-y-2 md:col-span-2 xl:col-span-4">
-                    <label class="{{ $labelClass }}" for="event_address">Dirección del evento</label>
-                    <input class="{{ $inputClass }}" id="event_address"
+                    <label class="{{ $labelClass }}" for="event_address">Dirección del evento <span class="text-red-400">*</span></label>
+                    <input class="{{ $fieldClass('event_address') }}" id="event_address"
                         placeholder="Ubicación exacta donde se montará el espectáculo" type="text"
-                        wire:model="event_address">
+                        wire:model="event_address" aria-invalid="{{ $errors->has('event_address') ? 'true' : 'false' }}">
                     @error('event_address')
                         <p class="{{ $errorClass }}">{{ $message }}</p>
                     @enderror
@@ -244,8 +256,9 @@
                                 <div class="space-y-2">
                                     <label class="{{ $labelClass }}" for="package_id_{{ $i }}">Paquete
                                         {{ $i + 1 }}</label>
-                                    <select class="{{ $inputClass }} appearance-none"
+                                    <select class="{{ $fieldClass($errors->has('package_id') ? 'package_id' : 'package_id.'.$i) }} appearance-none"
                                         id="package_id_{{ $i }}"
+                                        aria-invalid="{{ $errors->has('package_id') || $errors->has('package_id.'.$i) ? 'true' : 'false' }}"
                                         wire:model.live="package_id.{{ $i }}">
                                         <option value="">Seleccione un paquete</option>
                                         @foreach ($packages as $package)
@@ -262,6 +275,9 @@
                                             necesitas registrarlo sin salir del evento.
                                         </p>
                                     @endif
+                                    @error('package_id.'.$i)
+                                        <p class="{{ $errorClass }}">{{ $message }}</p>
+                                    @enderror
                                     @error('package_id')
                                         <p class="{{ $errorClass }}">{{ $message }}</p>
                                     @enderror
@@ -317,14 +333,14 @@
                     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_180px]">
                         <div class="space-y-2">
                             <label class="{{ $labelClass }}" for="customProductSearch">Buscar productos</label>
-                            <input class="{{ $inputClass }}" id="customProductSearch"
+                            <input class="{{ $fieldClass('customProductSearch') }}" id="customProductSearch"
                                 placeholder="Ej. cake, bomba, cruz del sur..." type="text"
-                                wire:model.live.debounce.300ms="customProductSearch">
+                                wire:model.live.debounce.300ms="customProductSearch" aria-invalid="{{ $errors->has('customProductSearch') ? 'true' : 'false' }}">
                         </div>
                         <div class="space-y-2">
                             <label class="{{ $labelClass }}" for="customProductQuantity">Cantidad a agregar</label>
-                            <input class="{{ $inputClass }}" id="customProductQuantity" min="1"
-                                type="number" wire:model.live="customProductQuantity">
+                            <input class="{{ $fieldClass('customProductQuantity') }}" id="customProductQuantity" min="1"
+                                type="number" wire:model.live="customProductQuantity" aria-invalid="{{ $errors->has('customProductQuantity') ? 'true' : 'false' }}">
                         </div>
                     </div>
 
@@ -348,10 +364,10 @@
 
                         <div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                             <div class="space-y-2 xl:col-span-2">
-                                <label class="{{ $labelClass }}" for="newCustomProductName">Nombre</label>
-                                <input class="{{ $inputClass }}" id="newCustomProductName"
+                                <label class="{{ $labelClass }}" for="newCustomProductName">Nombre <span class="text-red-400">*</span></label>
+                                <input class="{{ $fieldClass('newCustomProductName') }}" id="newCustomProductName"
                                     placeholder="Ej. Volcán cascada oro" type="text"
-                                    wire:model="newCustomProductName">
+                                    wire:model="newCustomProductName" aria-invalid="{{ $errors->has('newCustomProductName') ? 'true' : 'false' }}">
                                 @error('newCustomProductName')
                                     <p class="{{ $errorClass }}">{{ $message }}</p>
                                 @enderror
@@ -359,17 +375,17 @@
 
                             <div class="space-y-2">
                                 <label class="{{ $labelClass }}" for="newCustomProductRoleId">Tipo</label>
-                                <select class="{{ $inputClass }} appearance-none" id="newCustomProductRoleId"
-                                    wire:model="newCustomProductRoleId">
+                                <select class="{{ $fieldClass('newCustomProductRoleId') }} appearance-none" id="newCustomProductRoleId"
+                                    wire:model="newCustomProductRoleId" aria-invalid="{{ $errors->has('newCustomProductRoleId') ? 'true' : 'false' }}">
                                     <option value="1">Producto</option>
                                     <option value="2">Material</option>
                                 </select>
                             </div>
 
                             <div class="space-y-2">
-                                <label class="{{ $labelClass }}" for="newCustomProductUnit">Unidad</label>
-                                <input class="{{ $inputClass }}" id="newCustomProductUnit" placeholder="pz"
-                                    type="text" wire:model="newCustomProductUnit">
+                                <label class="{{ $labelClass }}" for="newCustomProductUnit">Unidad <span class="text-red-400">*</span></label>
+                                <input class="{{ $fieldClass('newCustomProductUnit') }}" id="newCustomProductUnit" placeholder="pz"
+                                    type="text" wire:model="newCustomProductUnit" aria-invalid="{{ $errors->has('newCustomProductUnit') ? 'true' : 'false' }}">
                                 @error('newCustomProductUnit')
                                     <p class="{{ $errorClass }}">{{ $message }}</p>
                                 @enderror
@@ -377,34 +393,34 @@
 
                             <div class="space-y-2 md:col-span-2 xl:col-span-4">
                                 <label class="{{ $labelClass }}" for="newCustomProductDescription">Descripción</label>
-                                <input class="{{ $inputClass }}" id="newCustomProductDescription"
+                                <input class="{{ $fieldClass('newCustomProductDescription') }}" id="newCustomProductDescription"
                                     placeholder="Opcional. Si la dejas vacía, se usará el nombre como referencia."
-                                    type="text" wire:model="newCustomProductDescription">
+                                    type="text" wire:model="newCustomProductDescription" aria-invalid="{{ $errors->has('newCustomProductDescription') ? 'true' : 'false' }}">
                             </div>
 
                             <div class="space-y-2">
                                 <label class="{{ $labelClass }}" for="newCustomProductQuantity">Cantidad para el evento</label>
-                                <input class="{{ $inputClass }}" id="newCustomProductQuantity" min="1"
-                                    type="number" wire:model.live="newCustomProductQuantity">
+                                <input class="{{ $fieldClass('newCustomProductQuantity') }}" id="newCustomProductQuantity" min="1"
+                                    type="number" wire:model.live="newCustomProductQuantity" aria-invalid="{{ $errors->has('newCustomProductQuantity') ? 'true' : 'false' }}">
                             </div>
 
                             <div class="space-y-2">
                                 <label class="{{ $labelClass }}" for="newCustomProductStock">Stock inicial inventario</label>
-                                <input class="{{ $inputClass }}" id="newCustomProductStock" min="0"
+                                <input class="{{ $fieldClass('newCustomProductStock') }}" id="newCustomProductStock" min="0"
                                     placeholder="Se ajusta al menos a la cantidad del evento" type="number"
-                                    wire:model="newCustomProductStock">
+                                    wire:model="newCustomProductStock" aria-invalid="{{ $errors->has('newCustomProductStock') ? 'true' : 'false' }}">
                             </div>
 
                             <div class="space-y-2">
-                                <label class="{{ $labelClass }}" for="newCustomProductPrice">Costo inventario</label>
-                                <input class="{{ $inputClass }}" id="newCustomProductPrice" placeholder="$0.00"
-                                    type="text" wire:model="newCustomProductPrice">
+                                <label class="{{ $labelClass }}" for="newCustomProductPrice">Costo inventario (opcional)</label>
+                                <input class="{{ $fieldClass('newCustomProductPrice') }}" id="newCustomProductPrice" placeholder="$0.00"
+                                    type="text" wire:model="newCustomProductPrice" aria-invalid="{{ $errors->has('newCustomProductPrice') ? 'true' : 'false' }}">
                             </div>
 
                             <div class="space-y-2">
-                                <label class="{{ $labelClass }}" for="newCustomProductEventPrice">Precio al cliente</label>
-                                <input class="{{ $inputClass }}" id="newCustomProductEventPrice" placeholder="$0.00"
-                                    type="text" wire:model="newCustomProductEventPrice">
+                                <label class="{{ $labelClass }}" for="newCustomProductEventPrice">Precio al cliente (opcional)</label>
+                                <input class="{{ $fieldClass('newCustomProductEventPrice') }}" id="newCustomProductEventPrice" placeholder="$0.00"
+                                    type="text" wire:model="newCustomProductEventPrice" aria-invalid="{{ $errors->has('newCustomProductEventPrice') ? 'true' : 'false' }}">
                             </div>
                         </div>
                     </div>
@@ -480,7 +496,7 @@
                             @endif
                         </div>
 
-                        <div class="space-y-4">
+                        <div class="space-y-4 {{ $errors->has('customProducts') ? 'rounded-2xl border border-red-500 p-4' : '' }}">
                             <div class="flex items-center justify-between gap-3">
                                 <div>
                                     <p class="text-sm font-semibold text-on-primary">Resumen del paquete personalizado
@@ -560,7 +576,7 @@
                                                     </div>
                                                     <div class="space-y-2">
                                                         <label class="{{ $labelClass }}"
-                                                            for="custom_product_inventory_price_{{ $item['index'] }}">Costo inventario</label>
+                                                            for="custom_product_inventory_price_{{ $item['index'] }}">Costo inventario (opcional)</label>
                                                         <input class="{{ $inputClass }}"
                                                             id="custom_product_inventory_price_{{ $item['index'] }}"
                                                             placeholder="$0.00" type="text"
@@ -573,7 +589,7 @@
                                                 @endif
                                                 <div class="space-y-2">
                                                     <label class="{{ $labelClass }}"
-                                                        for="custom_product_price_{{ $item['index'] }}">Precio al cliente</label>
+                                                        for="custom_product_price_{{ $item['index'] }}">Precio al cliente (opcional)</label>
                                                     <input class="{{ $inputClass }}"
                                                         id="custom_product_price_{{ $item['index'] }}"
                                                         placeholder="$0.00" type="text"
@@ -680,8 +696,8 @@
                 <div class="grid gap-5 md:grid-cols-2">
                     <div class="space-y-2">
                         <label class="{{ $labelClass }}" for="discount">Descuento</label>
-                        <input class="{{ $inputClass }}" id="discount" placeholder="10% o $1,500"
-                            type="text" wire:model="discountString">
+                        <input class="{{ $fieldClass('discountString') }}" id="discount" placeholder="10% o $1,500"
+                            type="text" wire:model="discountString" aria-invalid="{{ $errors->has('discountString') ? 'true' : 'false' }}">
                         @error('discount')
                             <p class="{{ $errorClass }}">{{ $message }}</p>
                         @enderror
@@ -689,8 +705,8 @@
 
                     <div class="space-y-2">
                         <label class="{{ $labelClass }}" for="deposit">Anticipo</label>
-                        <input class="{{ $inputClass }}" id="deposit" placeholder="$0.00" type="text"
-                            wire:model="deposit">
+                        <input class="{{ $fieldClass('deposit') }}" id="deposit" placeholder="$0.00" type="text"
+                            wire:model="deposit" aria-invalid="{{ $errors->has('deposit') ? 'true' : 'false' }}">
                         @error('deposit')
                             <p class="{{ $errorClass }}">{{ $message }}</p>
                         @enderror
@@ -698,17 +714,17 @@
 
                     <div class="space-y-2">
                         <label class="{{ $labelClass }}" for="viatic">Viáticos</label>
-                        <input class="{{ $inputClass }}" id="viatic" placeholder="$0.00" type="text"
-                            wire:model="viatic">
+                        <input class="{{ $fieldClass('viatic') }}" id="viatic" placeholder="$0.00" type="text"
+                            wire:model="viatic" aria-invalid="{{ $errors->has('viatic') ? 'true' : 'false' }}">
                         @error('viatic')
                             <p class="{{ $errorClass }}">{{ $message }}</p>
                         @enderror
                     </div>
 
                     <div class="space-y-2">
-                        <label class="{{ $labelClass }}" for="price">Precio final</label>
-                        <input class="{{ $inputClass }}" id="price" placeholder="$0.00" type="text"
-                            wire:model="price">
+                        <label class="{{ $labelClass }}" for="price">Precio final @if ($packageMode === 'custom') <span class="text-red-400">*</span> @endif</label>
+                        <input class="{{ $fieldClass('price') }}" id="price" placeholder="$0.00" type="text"
+                            wire:model="price" aria-invalid="{{ $errors->has('price') ? 'true' : 'false' }}">
                         @error('price')
                             <p class="{{ $errorClass }}">{{ $message }}</p>
                         @enderror
@@ -717,9 +733,9 @@
                     @if ($packageMode === 'custom')
                         <div class="space-y-2 md:col-span-2">
                             <label class="{{ $labelClass }}" for="contract_description">Descripción en contrato</label>
-                            <textarea class="{{ $textareaClass }}" id="contract_description"
+                            <textarea class="{{ $fieldClass('contract_description') }} min-h-28" id="contract_description"
                                 placeholder="Opcional. Describe cómo debe presentarse este paquete personalizado ante el cliente en el contrato."
-                                wire:model="contract_description"></textarea>
+                                wire:model="contract_description" aria-invalid="{{ $errors->has('contract_description') ? 'true' : 'false' }}"></textarea>
                             <p class="text-xs text-primary-200">
                                 Si la capturas, el contrato mostrará esta descripción comercial en lugar del desglose
                                 técnico de materiales.
@@ -732,8 +748,8 @@
 
                     <div class="space-y-2 md:col-span-2">
                         <label class="{{ $labelClass }}" for="notes">Notas</label>
-                        <textarea class="{{ $textareaClass }}" id="notes"
-                            placeholder="Observaciones, acuerdos especiales o requerimientos del cliente" wire:model="notes"></textarea>
+                        <textarea class="{{ $fieldClass('notes') }} min-h-28" id="notes"
+                            placeholder="Observaciones, acuerdos especiales o requerimientos del cliente" wire:model="notes" aria-invalid="{{ $errors->has('notes') ? 'true' : 'false' }}"></textarea>
                         @error('notes')
                             <p class="{{ $errorClass }}">{{ $message }}</p>
                         @enderror

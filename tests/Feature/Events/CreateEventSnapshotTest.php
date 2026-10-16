@@ -587,6 +587,103 @@ class CreateEventSnapshotTest extends TestCase
         $this->assertSame(0, $contractItems[0]['precio']);
     }
 
+    public function test_it_marks_missing_event_fields_on_both_save_actions_without_writing_an_event(): void
+    {
+        foreach (['save', 'saveAndContinue'] as $action) {
+            $component = Livewire::test(EventForm::class)
+                ->set('date', '')
+                ->set('event_type_id', '')
+                ->set('packageMode', 'registered')
+                ->call($action)
+                ->assertHasErrors([
+                    'date' => 'required',
+                    'phone' => 'required',
+                    'client_name' => 'required',
+                    'event_address' => 'required',
+                    'event_date' => 'required',
+                    'event_time' => 'required',
+                    'event_type_id' => 'required',
+                    'package_id' => 'required',
+                ])
+                ->assertSee('Este campo es requerido.')
+                ->assertSeeHtml('border-red-500')
+                ->assertSeeHtml('aria-invalid="true"');
+
+            $this->assertDatabaseCount('events', 0);
+            $component->assertNotDispatched('openModal');
+        }
+    }
+
+    public function test_new_custom_products_show_all_required_field_errors(): void
+    {
+        Livewire::test(EventForm::class)
+            ->set('newCustomProductName', '   ')
+            ->set('newCustomProductUnit', '')
+            ->call('addNewCustomProduct')
+            ->assertHasErrors([
+                'newCustomProductName' => 'required',
+                'newCustomProductUnit' => 'required',
+            ])
+            ->assertSet('customProducts', []);
+    }
+
+    public function test_custom_product_prices_are_optional_but_the_package_price_is_required(): void
+    {
+        Queue::fake();
+        $this->seedCatalog();
+        $eventType = $this->createEventType('Boda');
+        $inventory = $this->createInventory();
+        $existingProduct = Product::create([
+            'product_role_id' => 1,
+            'name' => 'Producto sin inventario',
+            'description' => 'Producto existente',
+            'unit' => 'pz',
+        ]);
+
+        $component = Livewire::test(EventForm::class)
+            ->set('packageMode', 'custom')
+            ->set('phone', '3121112233')
+            ->set('client_name', 'Laura Rangel')
+            ->set('event_address', 'Terraza del Mar')
+            ->set('event_date', '2026-07-15')
+            ->set('event_time', '20:30')
+            ->set('event_type_id', $eventType->id)
+            ->call('addCustomProduct', $existingProduct->id)
+            ->set('newCustomProductName', 'Producto sin precio')
+            ->call('addNewCustomProduct')
+            ->assertHasNoErrors();
+
+        foreach (['', '0', '-10'] as $price) {
+            $component->set('price', $price)
+                ->call('save')
+                ->assertHasErrors('price')
+                ->assertHasNoErrors('customProducts');
+            $this->assertDatabaseCount('events', 0);
+            $this->assertDatabaseMissing('products', ['name' => 'Producto sin precio']);
+        }
+
+        $component->set('price', '$3,800.00')->call('save')->assertHasNoErrors();
+        $event = Event::query()->latest('id')->firstOrFail();
+        $newProduct = Product::where('name', 'Producto sin precio')->firstOrFail();
+        $component->assertRedirect(route('events.show', $event->id));
+        $this->assertEquals(3800, $event->price);
+
+        foreach ([$existingProduct, $newProduct] as $product) {
+            $this->assertDatabaseHas('productables', [
+                'product_id' => $product->id,
+                'productable_type' => Event::class,
+                'productable_id' => $event->id,
+                'price' => 0,
+            ]);
+            $this->assertDatabaseHas('productables', [
+                'product_id' => $product->id,
+                'productable_type' => Inventory::class,
+                'productable_id' => $inventory->id,
+                'price' => 0,
+            ]);
+        }
+    }
+
     private function seedCatalog(): void
     {
         DB::table('product_roles')->insert([
@@ -598,7 +695,7 @@ class CreateEventSnapshotTest extends TestCase
 
     private function createEventType(string $name): EventType
     {
-        $eventType = new EventType();
+        $eventType = new EventType;
         $eventType->forceFill([
             'name' => $name,
             'description' => $name.' descripcion',
@@ -609,7 +706,7 @@ class CreateEventSnapshotTest extends TestCase
 
     private function createInventory(): Inventory
     {
-        $inventory = new Inventory();
+        $inventory = new Inventory;
         $inventory->forceFill([
             'id' => 1,
             'name' => 'Polvorin Central',
@@ -621,7 +718,7 @@ class CreateEventSnapshotTest extends TestCase
 
     private function createEquipment(string $name): Equipment
     {
-        $equipment = new Equipment();
+        $equipment = new Equipment;
         $equipment->forceFill([
             'name' => $name,
             'description' => $name.' descripcion',

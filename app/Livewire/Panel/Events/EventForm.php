@@ -103,9 +103,59 @@ class EventForm extends Component
 
     public $countEmployeeInputs = 1;
 
-    protected $rules = [
-        'date' => 'required',
-    ];
+    protected function rules(): array
+    {
+        $rules = [
+            'date' => 'required|date_format:Y-m-d',
+            'phone' => 'required|string|max:255',
+            'client_name' => 'required|string|max:255',
+            'client_address' => 'nullable|string|max:255',
+            'event_address' => 'required|string|max:255',
+            'event_date' => 'required|date_format:Y-m-d',
+            'event_time' => 'required|date_format:H:i',
+            'event_type_id' => 'required|exists:event_types,id',
+            'packageMode' => 'required|in:registered,custom',
+        ];
+
+        if ($this->packageMode === 'registered') {
+            $rules['package_id'] = ['required', 'array', function ($attribute, $value, $fail) {
+                if (empty($this->selectedPackageIds())) {
+                    $fail('Selecciona al menos un paquete registrado.');
+                }
+            }];
+            $rules['package_id.*'] = 'nullable|exists:packages,id';
+        } else {
+            $rules['customProducts'] = ['required', 'array', function ($attribute, $value, $fail) {
+                if ($this->selectedCustomProducts()->isEmpty()) {
+                    $fail('Agrega al menos un material o producto al paquete personalizado.');
+                }
+            }];
+            $rules['price'] = ['required', function ($attribute, $value, $fail) {
+                if ($this->parse_user_amount((string) $value) <= 0) {
+                    $fail('El precio final del paquete personalizado es requerido y debe ser mayor a cero.');
+                }
+            }];
+            $rules['contract_description'] = ['nullable', function ($attribute, $value, $fail) {
+                if (mb_strlen((string) $this->sanitizeContractDescription()) > 240) {
+                    $fail('La descripción para contrato debe ser breve. Usa hasta 240 caracteres.');
+                }
+            }];
+        }
+
+        return $rules;
+    }
+
+    protected function messages(): array
+    {
+        return [
+            'required' => 'Este campo es requerido.',
+            'date_format' => 'Captura una fecha u hora válida.',
+            'max' => 'Este campo no debe superar los :max caracteres.',
+            'exists' => 'Selecciona una opción válida.',
+            'package_id.required' => 'Selecciona al menos un paquete registrado. Este campo es requerido.',
+            'customProducts.required' => 'Agrega al menos un material o producto al paquete personalizado.',
+        ];
+    }
 
     public function updatedPackageMode(): void
     {
@@ -289,17 +339,12 @@ class EventForm extends Component
         $quantity = max((int) $this->newCustomProductQuantity, 1);
         $inventoryQuantity = max($this->parseNumberInput($this->newCustomProductStock), (float) $quantity);
 
-        if ($name === '') {
-            $this->addError('newCustomProductName', 'Captura el nombre del producto nuevo.');
-
-            return;
-        }
-
-        if ($unit === '') {
-            $this->addError('newCustomProductUnit', 'Captura la unidad del producto nuevo.');
-
-            return;
-        }
+        $this->newCustomProductName = $name;
+        $this->newCustomProductUnit = $unit;
+        $this->validate([
+            'newCustomProductName' => 'required|string|max:255',
+            'newCustomProductUnit' => 'required|string|max:255',
+        ]);
 
         $this->customProducts[] = [
             'product_id' => null,
@@ -341,7 +386,7 @@ class EventForm extends Component
         $this->countPackageInputs = max(count($this->package_id), 1);
         $this->countEmployeeInputs = max($this->event->employees->count(), 1);
         $this->discount = $this->event->discount;
-        $this->discountString = $this->event->discount * 100 . '%';
+        $this->discountString = $this->event->discount * 100 .'%';
         $this->deposit = $this->event->advance;
         $this->viatic = $this->event->travel_expenses;
         $this->notes = $this->event->notes;
@@ -505,7 +550,7 @@ class EventForm extends Component
             'client_name' => $this->client_name,
             'client_address' => $this->client_address,
             'event_address' => $this->event_address,
-            'event_date' => $this->event_date . ' ' . $this->event_time,
+            'event_date' => $this->event_date.' '.$this->event_time,
             'event_type_id' => $this->event_type_id,
             'discount' => $this->parse_user_amount((string) $this->discountString),
             'advance' => $this->parse_user_amount((string) $this->deposit),
@@ -616,20 +661,16 @@ class EventForm extends Component
 
     public function save()
     {
+        $this->validate();
         $this->processDiscount();
 
         if ($this->shouldBlockForPastEventDate()) {
             return null;
         }
 
-        if (! $this->validateEventComposition()) {
-            return;
-        }
-
         // Coverage is advisory; a contract does not require physical stock now.
         $this->validateStock();
 
-        $this->validate();
         $event = \Illuminate\Support\Facades\DB::transaction(function () {
             $event = $this->saveEvent();
             $this->saveProductsInEvent($event);
@@ -674,20 +715,13 @@ class EventForm extends Component
 
     public function saveAndContinue()
     {
+        $this->validate();
         $this->processDiscount();
 
         if ($this->shouldBlockForPastEventDate()) {
             return null;
         }
 
-        if (! $this->validateEventComposition()) {
-            $this->showAlert = false;
-            $this->enableSave = true;
-
-            return null;
-        }
-
-        $this->validate();
         $event = \Illuminate\Support\Facades\DB::transaction(function () {
             $event = $this->saveEvent();
             $this->saveProductsInEvent($event);
@@ -714,82 +748,6 @@ class EventForm extends Component
         $this->dispatch('closeModal', ['id' => 'past-event-date']);
 
         return $this->save();
-    }
-
-    private function validateEventComposition(): bool
-    {
-        $this->resetValidation([
-            'package_id',
-            'customProducts',
-            'price',
-            'contract_description',
-            'newCustomProductName',
-            'newCustomProductUnit',
-            'newCustomProductStock',
-            'newCustomProductPrice',
-            'newCustomProductEventPrice',
-        ]);
-
-        if ($this->packageMode === 'registered') {
-            if (! empty($this->selectedPackageIds())) {
-                return true;
-            }
-
-            $this->addError('package_id', 'Selecciona al menos un paquete registrado o cambia a modo personalizado.');
-
-            return false;
-        }
-
-        if ($this->selectedCustomProducts()->isEmpty()) {
-            $this->addError('customProducts', 'Agrega al menos un material o producto al paquete personalizado.');
-
-            return false;
-        }
-
-        $missingCommercialPrice = $this->customSelectionItems()
-            ->filter(fn ($item) => $this->parseNumberInput($item['price'] ?? 0) <= 0)
-            ->pluck('name')
-            ->filter()
-            ->values();
-
-        if ($missingCommercialPrice->isNotEmpty()) {
-            $this->addError(
-                'customProducts',
-                'Captura el precio al cliente de: '.$missingCommercialPrice->take(3)->implode(', ').($missingCommercialPrice->count() > 3 ? ' y más.' : '.')
-            );
-
-            return false;
-        }
-
-        $missingInventoryCost = $this->customSelectionItems()
-            ->filter(fn ($item) => ($item['requires_inventory_registration'] ?? false) === true)
-            ->filter(fn ($item) => $this->parseNumberInput($item['inventory_price'] ?? 0) <= 0)
-            ->pluck('name')
-            ->filter()
-            ->values();
-
-        if ($missingInventoryCost->isNotEmpty()) {
-            $this->addError(
-                'customProducts',
-                'Captura el costo de inventario de: '.$missingInventoryCost->take(3)->implode(', ').($missingInventoryCost->count() > 3 ? ' y más.' : '.')
-            );
-
-            return false;
-        }
-
-        if ($this->parse_user_amount((string) $this->price) <= 0) {
-            $this->addError('price', 'Captura el precio final del evento para un paquete personalizado.');
-
-            return false;
-        }
-
-        if ($this->sanitizeContractDescription() !== null && mb_strlen((string) $this->sanitizeContractDescription()) > 240) {
-            $this->addError('contract_description', 'La descripción para contrato debe ser breve. Usa hasta 240 caracteres.');
-
-            return false;
-        }
-
-        return true;
     }
 
     private function selectedPackageIds(): array
@@ -937,7 +895,7 @@ class EventForm extends Component
         return Product::with('inventories')
             ->where('product_role_id', '!=', 3)
             ->when($this->customProductSearch !== '', function ($query) {
-                $query->where('name', 'like', '%' . trim($this->customProductSearch) . '%');
+                $query->where('name', 'like', '%'.trim($this->customProductSearch).'%');
             })
             ->orderBy('name', 'ASC')
             ->limit(30)
@@ -1093,8 +1051,8 @@ class EventForm extends Component
     private function productDescriptor(Product $product): string
     {
         return collect([
-            $product->caliber ? $product->caliber . '"' : null,
-            $product->shots ? $product->shots . ' tiros' : null,
+            $product->caliber ? $product->caliber.'"' : null,
+            $product->shots ? $product->shots.' tiros' : null,
             $product->shape ?: null,
             $product->unit ?: null,
         ])->filter()->implode(' · ');
