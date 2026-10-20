@@ -23,6 +23,8 @@ class SendReminder implements ShouldQueue
 
     protected $sendToOwner;
 
+    protected ?string $notificationId = null;
+
     /**
      * Create a new job instance.
      */
@@ -32,6 +34,7 @@ class SendReminder implements ShouldQueue
         $this->method = $method;
         $this->event = Event::with(['employees', 'packages', 'products', 'typeEvent'])->find($event->id);
         $this->sendToOwner = $sendToOwner;
+        $this->notificationId = (string) \Illuminate\Support\Str::uuid();
     }
 
     /**
@@ -139,16 +142,27 @@ class SendReminder implements ShouldQueue
     private function sendPushNotification()
     {
         $event = $this->event;
-        $token = $event->employees->first()->user->fcm_token;
+        $recipient = $event->employees->first()?->user;
+        if (! $recipient) {
+            return;
+        }
+        $token = $recipient->fcm_token;
         // $token = 'cAyzVSqTT0kfrtjoFKQctq:APA91bEzA6YjIG5QvCzHsSXii_5OB6dvABetSE6tFykgtp_QyTmvTSrHs0EEzjdwvDCqTnXQdvb4v6DXwgDPfOgDdmRmdhFohXVXOa5XQ1bhzuM8kEQcO2g';
 
         $notification = [
             'title' => 'Pirotecnia San Rafael - Recordatorio de Evento',
             'body' => $event->event_address.' - '.$event->event_date,
         ];
+        $this->notificationId ??= (string) \Illuminate\Support\Str::uuid();
+        app(\App\Services\Mobile\MobileNotificationService::class)->remember($recipient, $this->notificationId, $notification['title'], $notification['body'], $event->id);
+        if (! $token) {
+            return;
+        }
 
         $data = [
             'event_id' => $event->id,
+            'user_id' => $recipient->id,
+            'notification_id' => $this->notificationId,
         ];
 
         $apns = [

@@ -9,7 +9,7 @@ class EventPickingService
     public function create(int $eventId, int $location, int $actor): array
     {
         return DB::transaction(function () use ($eventId, $location, $actor) {
-            $event = InventoryData::get('events', $eventId, true);
+            $event = InventoryData::activeEvent($eventId);
             InventoryData::assert($event->logistics_status === 'preparing', 'Inicia la preparación antes del picking.');
             $requirements = DB::table('event_requirements')->where('event_id', $eventId)->pluck('id');
             $allocations = DB::table('requirement_allocations')->whereIn('event_requirement_id', $requirements)->where('warehouse_location_id', $location)->where('status', 'reserved')->whereNotIn('id', DB::table('event_picking_items')->select('requirement_allocation_id'))->lockForUpdate()->get();
@@ -35,7 +35,7 @@ class EventPickingService
     public function confirm(int $eventId, int $id, int $itemId, float $quantity, int $actor): array
     {
         return DB::transaction(function () use ($eventId, $id, $itemId, $quantity, $actor) {
-            InventoryData::get('events', $eventId, true);
+            InventoryData::activeEvent($eventId);
             $picking = InventoryData::get('event_pickings', $id, true);
             abort_unless($picking->event_id === $eventId, 404);
             InventoryData::assert($picking->status === 'in_progress', 'Picking cerrado.');
@@ -53,7 +53,7 @@ class EventPickingService
     public function complete(int $eventId, int $id, int $actor): array
     {
         return DB::transaction(function () use ($eventId, $id, $actor) {
-            InventoryData::get('events', $eventId, true);
+            InventoryData::activeEvent($eventId);
             $picking = InventoryData::get('event_pickings', $id, true);
             abort_unless($picking->event_id === $eventId, 404);
             InventoryData::assert($picking->status === 'in_progress' && ! DB::table('event_picking_items')->where('event_picking_id', $id)->where('status', '!=', 'confirmed')->exists(), 'Picking incompleto o cerrado.');

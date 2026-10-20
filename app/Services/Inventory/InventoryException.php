@@ -13,7 +13,7 @@ class InventoryException extends RuntimeException
 
     public function render($request)
     {
-        if ($request->expectsJson()) {
+        if ($request->is('api/*') || $request->expectsJson()) {
             return response()->json(['message' => $this->getMessage(), 'code' => $this->errorCode, 'errors' => $this->errors], $this->status);
         }
 

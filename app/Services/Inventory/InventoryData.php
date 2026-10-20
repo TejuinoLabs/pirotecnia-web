@@ -25,6 +25,16 @@ class InventoryData
         return DB::table($table)->insertGetId(self::encode($values) + ['created_at' => now(), 'updated_at' => now()]);
     }
 
+    public static function activeEvent(int $id): object
+    {
+        $event = self::get('events', $id, true);
+        if (in_array($event->status, ['closed', 'cancelled'], true)) {
+            throw new InventoryException('El evento está cerrado o cancelado.', 'EVENT_STATE_CONFLICT', [], 409);
+        }
+
+        return $event;
+    }
+
     public static function update(string $table, int $id, array $values): void
     {
         DB::table($table)->where('id', $id)->update(self::encode($values) + ['updated_at' => now()]);

@@ -15,7 +15,9 @@ class MobileReturnService
     {
         $d = InventoryData::get('event_dispatches', $dispatch);
         $receipt = DB::table('technician_receipts')->where('event_dispatch_id', $dispatch)->first();
-        $items = DB::table('event_dispatch_items')->where('event_dispatch_id', $dispatch)->orderBy('id')->get()->map(function ($item) use ($receipt) {
+        $warehouse = DB::table('event_returns')->where('event_dispatch_id', $dispatch)->where('status', 'confirmed')->first();
+        $warehouseItems = $warehouse ? DB::table('event_return_items')->where('event_return_id', $warehouse->id)->get()->keyBy('dispatch_item_id') : collect();
+        $items = DB::table('event_dispatch_items')->where('event_dispatch_id', $dispatch)->orderBy('id')->get()->map(function ($item) use ($receipt, $warehouse, $warehouseItems) {
             $received = $receipt ? DB::table('technician_receipt_items')->where('technician_receipt_id', $receipt->id)->where('dispatch_item_id', $item->id)->value('received_quantity') : '0';
             $totals = ['consumed' => 0, 'returned' => 0, 'damaged' => 0, 'lost' => 0];
             foreach (DB::table('mobile_return_declaration_items')->where('dispatch_item_id', $item->id)->get() as $declared) {
@@ -24,10 +26,15 @@ class MobileReturnService
                 }
             }
 
-            return ['dispatch_item_id' => $item->id, 'product_id' => $item->product_id, 'is_returnable' => (bool) $item->is_returnable, 'quantity_dispatched' => MobileContract::quantity(MobileContract::milli($item->quantity)), 'quantity_received' => MobileContract::quantity(MobileContract::milli($received)), 'quantity_pending' => MobileContract::quantity(max(0, MobileContract::milli($received) - array_sum($totals))), ...collect($totals)->mapWithKeys(fn ($total, $key) => ['quantity_'.$key => MobileContract::quantity($total)])->all()];
+            $verified = $warehouseItems->get($item->id);
+            $physical = $verified ? collect(['consumed', 'returned', 'damaged', 'lost'])->mapWithKeys(fn ($field) => ['quantity_'.$field => MobileContract::quantity(MobileContract::milli($verified->{'quantity_'.$field}))])->all() : null;
+
+            return ['dispatch_item_id' => $item->id, 'product_id' => $item->product_id, 'serial_number' => $item->serial_number, 'is_returnable' => (bool) $item->is_returnable, 'quantity_dispatched' => MobileContract::quantity(MobileContract::milli($item->quantity)), 'quantity_received' => MobileContract::quantity(MobileContract::milli($received)),
+                'quantity_pending' => MobileContract::quantity($warehouse ? 0 : max(0, MobileContract::milli($received) - array_sum($totals))),
+                'warehouse_quantities' => $physical, ...collect($totals)->mapWithKeys(fn ($total, $key) => ['quantity_'.$key => MobileContract::quantity($total)])->all()];
         })->all();
 
-        return ['dispatch_id' => $dispatch, 'revision' => $d->mobile_return_revision, 'items' => $items];
+        return ['dispatch_id' => $dispatch, 'revision' => $d->mobile_return_revision, 'warehouse_confirmed_at' => MobileContract::utc($warehouse?->returned_at), 'warehouse_return_id' => $warehouse?->id, 'items' => $items];
     }
 
     public function declare(int $event, array $data, User $actor): array
@@ -36,6 +43,7 @@ class MobileReturnService
             app(TechnicianEventService::class)->authorize($actor, $event, 'mobile.return', true);
             $d = InventoryData::get('event_dispatches', $data['dispatch_id'], true);
             abort_unless($d->event_id === $event && $d->technician_id === $actor->id, 403);
+            MobileContract::conflict(app(DispatchIdentityService::class)->matches($d), 'La identidad de la carga cambió; solicita revisión al almacén.', 'DISPATCH_VERSION_CONFLICT');
             MobileContract::conflict($d->status === 'received' && DB::table('technician_receipts')->where('event_dispatch_id', $d->id)->exists(), 'Registra la recepción antes de declarar una devolución.', 'RETURN_RECEIPT_REQUIRED');
             MobileContract::conflict($d->mobile_return_revision === (int) $data['expected_revision'], 'La conciliación cambió.', 'RETURN_REVISION_CONFLICT');
             MobileContract::conflict(! DB::table('event_returns')->where('event_dispatch_id', $d->id)->exists(), 'El almacén ya inició la conciliación física.', 'WAREHOUSE_RETURN_IN_PROGRESS');
@@ -56,6 +64,11 @@ class MobileReturnService
                 if ($total === 0) {
                     throw ValidationException::withMessages(['items' => ['Cada línea debe declarar una cantidad mayor que cero.']]);
                 }
+                $dispatchLine = InventoryData::get('event_dispatch_items', $item['dispatch_item_id']);
+                app(DispatchIdentityService::class)->validateSerial($dispatchLine, $item['serial_number'] ?? null, $total);
+                if (MobileContract::milli($item['quantity_damaged']) + MobileContract::milli($item['quantity_lost']) > 0 && trim($item['notes'] ?? '') === '') {
+                    throw ValidationException::withMessages(['items' => 'Explica el daño o extravío en las notas del concepto.']);
+                }
                 MobileContract::conflict($total <= MobileContract::milli($original['quantity_pending']), 'La declaración excede lo recibido pendiente.', 'RETURN_QUANTITY_CONFLICT');
                 if ($original['is_returnable'] && MobileContract::milli($item['quantity_consumed']) > 0) {
                     throw ValidationException::withMessages(['items' => ['El equipo retornable no puede declararse consumido.']]);
@@ -69,6 +82,7 @@ class MobileReturnService
             InventoryData::update('event_dispatches', $d->id, ['mobile_return_revision' => $d->mobile_return_revision + 1]);
             InventoryData::update('events', $event, ['logistics_status' => 'awaiting_return']);
             app(AuditService::class)->record($actor->id, 'mobile_return_declared', 'mobile_return_declaration', $id, $data);
+            app(DeparturePassService::class)->invalidate($event, $actor->id, 'Se declaró una devolución de la carga.');
 
             return ['data' => $this->show($id)];
         });

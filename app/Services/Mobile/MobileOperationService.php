@@ -61,7 +61,7 @@ class MobileOperationService
                 MobileContract::conflict(! $previous || $previous->occurred_at <= \Carbon\CarbonImmutable::parse($data['occurred_at'])->setTimezone(config('app.timezone'))->toDateTimeString(), 'El hito es anterior a su dependencia.', 'STEP_ORDER_CONFLICT');
             }
             if (app(MobileProtocolService::class)->isReceiptReview($s)) {
-                MobileContract::conflict(! DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->where('status', 'confirmed')->exists(), 'Registra la recepción de tus despachos antes de este hito.', 'RECEIPT_PENDING');
+                MobileContract::conflict(! DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->whereIn('status', ['draft', 'preparing', 'prepared', 'confirmed'])->exists(), 'Registra la recepción de tus despachos antes de este hito.', 'RECEIPT_PENDING');
             }
             $values = array_merge($data, $this->times($data), ['event_id' => $event, 'step_id' => $step, 'recorded_by' => $actor->id, 'original_payload' => $data, 'attachment_ids' => $data['attachment_ids'] ?? []]);
             $id = InventoryData::insert('mobile_step_records', $values);
@@ -135,6 +135,7 @@ class MobileOperationService
             $id = InventoryData::insert('mobile_incidents', array_merge($data, $this->times($data), ['event_id' => $event, 'created_by' => $actor->id, 'attachment_ids' => $data['attachment_ids'] ?? []]));
             app(MobileAttachmentService::class)->link($data['attachment_ids'] ?? [], $event, $actor->id, 'incident', $id);
             app(AuditService::class)->record($actor->id, 'mobile_incident_created', 'mobile_incident', $id, $data);
+            app(DeparturePassService::class)->invalidate($event, $actor->id, 'Se reportó una incidencia sobre la operación.');
             $this->touch($event);
 
             return ['data' => MobileContract::dates((array) InventoryData::get('mobile_incidents', $id))];
@@ -169,9 +170,10 @@ class MobileOperationService
             $progress = app(TechnicianEventService::class)->progress($p);
             MobileContract::conflict($progress['completed'] === $progress['required'], 'Faltan pasos obligatorios.', 'REQUIRED_STEPS_PENDING');
             MobileContract::conflict(! DB::table('mobile_incidents')->where('event_id', $event)->whereIn('severity', ['high', 'critical'])->where('status', '!=', 'resolved')->exists(), 'Hay incidencias críticas sin resolver.', 'CRITICAL_INCIDENTS_PENDING');
-            MobileContract::conflict(! DB::table('event_dispatches')->where('event_id', $event)->whereIn('status', ['draft', 'confirmed'])->exists(), 'Hay despachos sin recepción.', 'RECEIPT_PENDING');
+            MobileContract::conflict(! DB::table('event_dispatches')->where('event_id', $event)->whereIn('status', ['draft', 'preparing', 'prepared', 'confirmed'])->exists(), 'Hay despachos sin recepción.', 'RECEIPT_PENDING');
+            MobileContract::conflict(! app(MobileMaterialsService::class)->hasPendingCustody($event), 'Concilia el material pendiente y las diferencias antes del cierre.', 'MATERIALS_PENDING');
             InventoryData::update('mobile_event_protocols', $p->id, ['status' => 'closed', 'closed_at' => now(), 'closed_by' => $actor->id, 'closing_notes' => trim($data['notes']), 'closure_occurred_at' => $times['occurred_at'], 'closure_recorded_at' => $times['recorded_at']]);
-            $open = DB::table('event_dispatches')->where('event_id', $event)->where('status', '!=', 'closed')->exists();
+            $open = DB::table('event_dispatches')->where('event_id', $event)->whereNotIn('status', ['closed', 'cancelled'])->exists();
             app(MobileProtocolService::class)->sync(InventoryData::get('mobile_event_protocols', $p->id));
             InventoryData::update('events', $event, ['logistics_status' => $open ? 'awaiting_return' : 'closed']);
             app(AuditService::class)->record($actor->id, 'mobile_event_closed', 'event', $event, $data);

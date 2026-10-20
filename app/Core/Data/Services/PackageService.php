@@ -8,10 +8,17 @@ use Illuminate\Support\Collection;
 
 class PackageService
 {
+    public function paginate(int $page, int $perPage = 10): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        return ModelsPackage::with(['products', 'equipments'])->orderBy('id')
+            ->paginate($perPage, ['*'], 'page', max(1, $page))
+            ->through(fn ($package) => Package::fromPackage($package));
+    }
+
     public function all(): Collection
     {
         try {
-            $eloquentPackages = ModelsPackage::all();
+            $eloquentPackages = ModelsPackage::with(['products', 'equipments'])->get();
             $packages = $eloquentPackages->map(function ($eloquentPackage) {
                 return Package::fromPackage($eloquentPackage);
             });

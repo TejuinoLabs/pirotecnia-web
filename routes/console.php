@@ -1,5 +1,9 @@
 <?php
 
+\Illuminate\Support\Facades\Artisan::command('admin:prune-media', function () {
+    $this->info('Archivos huérfanos eliminados: '.app(\App\Services\Admin\AdminMediaService::class)->prune());
+})->purpose('Elimina medios administrativos sin referencia con más de 24 horas')->daily();
+
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 

@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 
 class ProductAllocationScoringService
 {
-    public function score(Product $product, object $requirement, array $stock, array $constraints, bool $valueCompatible): array
+    public function score(Product $product, object $requirement, array $stock, array $constraints, bool $valueCompatible, array $context = []): array
     {
         $weights = config('inventory.scoring');
         $score = $weights['base'];
@@ -34,15 +34,16 @@ class ProductAllocationScoringService
         }
         $meta = InventoryData::json($requirement->metadata);
         if ($meta['prefer_effect_variety'] ?? false) {
-            $used = DB::table('requirement_allocations')->where('event_requirement_id', $requirement->id)->whereIn('status', ['reserved', 'picked'])->pluck('product_id');
-            $effects = DB::table('product_effects')->where('product_id', $product->id)->pluck('effect_id');
-            if ($effects->isNotEmpty() && ! DB::table('product_effects')->whereIn('product_id', $used)->whereIn('effect_id', $effects)->exists()) {
+            $used = $context['allocated_products'] ?? DB::table('requirement_allocations')->where('event_requirement_id', $requirement->id)->whereIn('status', ['reserved', 'picked'])->pluck('product_id');
+            $effects = array_key_exists('effects', $context) ? collect($context['effects'][$product->id] ?? []) : DB::table('product_effects')->where('product_id', $product->id)->pluck('effect_id');
+            $overlap = array_key_exists('effects', $context) ? collect($used)->contains(fn ($id) => $effects->intersect($context['effects'][$id] ?? [])->isNotEmpty()) : DB::table('product_effects')->whereIn('product_id', $used)->whereIn('effect_id', $effects)->exists();
+            if ($effects->isNotEmpty() && ! $overlap) {
                 $score += $weights['variety'];
                 $reasons[] = 'Aporta variedad de efectos';
             }
         }
         if ($meta['prefer_old_stock'] ?? false) {
-            $oldest = DB::table('inventory_movements')->where('product_id', $product->id)->whereNotNull('to_location_id')->min('occurred_at');
+            $oldest = array_key_exists('oldest', $context) ? ($context['oldest'][$product->id] ?? null) : DB::table('inventory_movements')->where('product_id', $product->id)->whereNotNull('to_location_id')->min('occurred_at');
             if ($oldest && strtotime($oldest) < strtotime('-30 days')) {
                 $score += $weights['rotation'];
                 $reasons[] = 'Prioridad de rotación';

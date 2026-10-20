@@ -495,6 +495,9 @@
                                     src="{{ $employeePhoto }}" />
                                 <div class="min-w-0 flex-1">
                                     <h4 class="truncate text-sm font-bold text-on-primary">{{ $employeeName }}</h4>
+                                    <p class="mt-1 text-xs text-primary-200">
+                                        Sueldo del evento: ${{ number_format((float) ($employee->pivot->salary ?? $employee->salary), 2) }}
+                                    </p>
                                     <div class="mt-2 flex flex-wrap items-center gap-2">
                                         <span
                                             class="inline-flex rounded-full border border-secondary/30 bg-secondary/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-secondary">

@@ -61,6 +61,15 @@ class PackageRequirementService
         }
     }
 
+    public function constraintsFor(string $owner, iterable $ids): \Illuminate\Support\Collection
+    {
+        return DB::table('requirement_constraints')->where('owner_type', $owner)->whereIn('owner_id', $ids)->get()
+            ->groupBy('owner_id')->map(fn ($rows) => $rows->map(fn ($row) => [
+                'attribute_code' => $row->attribute_code, 'operator' => $row->operator,
+                'value' => json_decode($row->value, true), 'is_hard_constraint' => (bool) $row->is_hard_constraint, 'weight' => $row->weight,
+            ])->all());
+    }
+
     public function constraints(string $owner, int $id): array
     {
         return DB::table('requirement_constraints')->where('owner_type', $owner)->where('owner_id', $id)->get()->map(function ($row) {

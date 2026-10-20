@@ -49,6 +49,8 @@ class EventForm extends Component
 
     public $employee_id = [];
 
+    public $employeeSalaries = [];
+
     public $customProductSearch = '';
 
     public $customProductQuantity = 1;
@@ -115,7 +117,14 @@ class EventForm extends Component
             'event_time' => 'required|date_format:H:i',
             'event_type_id' => 'required|exists:event_types,id',
             'packageMode' => 'required|in:registered,custom',
+            'employee_id' => 'array',
+            'employee_id.*' => 'nullable|exists:employees,id',
+            'employeeSalaries' => 'array',
         ];
+
+        foreach ($this->selectedEmployeeIds() as $employeeId) {
+            $rules['employeeSalaries.' . $employeeId] = 'nullable|numeric|min:0|max:9999999999.99|decimal:0,2';
+        }
 
         if ($this->packageMode === 'registered') {
             $rules['package_id'] = ['required', 'array', function ($attribute, $value, $fail) {
@@ -154,6 +163,10 @@ class EventForm extends Component
             'exists' => 'Selecciona una opción válida.',
             'package_id.required' => 'Selecciona al menos un paquete registrado. Este campo es requerido.',
             'customProducts.required' => 'Agrega al menos un material o producto al paquete personalizado.',
+            'employeeSalaries.*.numeric' => 'Captura un sueldo válido.',
+            'employeeSalaries.*.min' => 'El sueldo no puede ser negativo.',
+            'employeeSalaries.*.max' => 'El sueldo supera el importe permitido.',
+            'employeeSalaries.*.decimal' => 'Usa hasta dos decimales para el sueldo.',
         ];
     }
 
@@ -383,6 +396,9 @@ class EventForm extends Component
             ->values()
             ->toArray();
         $this->employee_id = $this->event->employees->pluck('id')->toArray();
+        $this->employeeSalaries = $this->event->employees
+            ->mapWithKeys(fn ($employee) => [$employee->id => $employee->pivot->salary])
+            ->all();
         $this->countPackageInputs = max(count($this->package_id), 1);
         $this->countEmployeeInputs = max($this->event->employees->count(), 1);
         $this->discount = $this->event->discount;
@@ -589,7 +605,13 @@ class EventForm extends Component
 
     private function syncEmployees(Event $event, array $selectedEmployeeIds): void
     {
-        $event->employees()->sync($selectedEmployeeIds);
+        $payload = collect($selectedEmployeeIds)->mapWithKeys(fn ($employeeId) => [
+            $employeeId => ['salary' => filled($this->employeeSalaries[$employeeId] ?? null)
+                ? $this->employeeSalaries[$employeeId]
+                : null],
+        ])->all();
+
+        $event->employees()->sync($payload);
     }
 
     private function syncPackages(Event $event, array $selectedPackageIds): void

@@ -11,6 +11,8 @@ class Employee extends Model
 {
     use HasFactory;
 
+    protected $attributes = ['status' => 'active'];
+
     protected static function boot()
     {
         parent::boot();
@@ -22,7 +24,7 @@ class Employee extends Model
 
     public function events(): BelongsToMany
     {
-        return $this->belongsToMany(Event::class)->withTimestamps();
+        return $this->belongsToMany(Event::class)->withPivot('salary')->withTimestamps();
     }
 
     public function experienceLevel(): BelongsTo

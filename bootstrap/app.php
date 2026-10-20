@@ -12,11 +12,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        $middleware->prependToGroup('api', \App\Http\Middleware\MeasurePerformance::class);
+        $middleware->prependToGroup('web', \App\Http\Middleware\MeasurePerformance::class);
         $middleware->validateCsrfTokens(except: [
             '/print-ticket',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        $exceptions->shouldRenderJsonWhen(fn ($request, $e) => $request->is('api/*') || $request->expectsJson());
     })->create();

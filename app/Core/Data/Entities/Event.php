@@ -10,6 +10,12 @@ class Event
 {
     public $id;
 
+    public $status;
+
+    public $event_type_id;
+
+    public $package_id;
+
     public $event_type;
 
     public $package;
@@ -95,7 +101,7 @@ class Event
 
     public static function fromEvent(ModelsEvent|Model $event)
     {
-        $event->load('employees', 'packages', 'products', 'equipments');
+        $event->loadMissing(\App\Core\Data\Services\EventService::RELATIONS);
         $newEvent = new self(self::extractAttributes($event));
         $newEvent->employees = self::mapEmployees($event->employees);
         $newEvent->packages = self::mapPackages($event->packages);
@@ -122,6 +128,9 @@ class Event
 
         return [
             'id' => $event->id,
+            'status' => $event->status,
+            'event_type_id' => $event->event_type_id,
+            'package_id' => $event->package_id,
             'event_type' => optional($event->typeEvent)->name ?: 'Sin tipo',
             'package' => $packageName ?: 'Sin paquete asignado',
             'date' => $event->date,
@@ -153,7 +162,7 @@ class Event
 
     private static function mapProducts($packages, $products)
     {
-        return $products->map(function ($product) use ($products) {
+        return $products->map(function ($product) {
             return Product::fromProduct($product, 'event');
         })->unique('id')->values();
     }

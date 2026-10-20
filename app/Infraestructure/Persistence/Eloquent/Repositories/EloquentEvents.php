@@ -12,7 +12,7 @@ class EloquentEvents implements EventRepository
 {
     public function eventDetail(int $id): Event
     {
-        $event = ModelsEvent::find($id);
+        $event = ModelsEvent::with(['typeEvent', 'employees.experienceLevel', 'packages.experienceLevel', 'packages.products.productRole', 'packages.equipments', 'products.productRole', 'equipments'])->find($id);
 
         return EventMapper::fromModel($event);
     }

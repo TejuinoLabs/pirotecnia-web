@@ -211,3 +211,4 @@ Route::middleware('auth')->group(function () {
 });
 $registerInventoryRoutes = require __DIR__.'/inventory_api.php';
 $registerInventoryRoutes('auth', 'inventory/operations');
+Route::get('/admin/media/{media}', [\App\Http\Controllers\API\AdminMediaController::class, 'download'])->middleware('signed')->whereUuid('media')->name('admin.media.download');

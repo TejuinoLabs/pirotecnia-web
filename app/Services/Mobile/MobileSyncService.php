@@ -15,9 +15,27 @@ class MobileSyncService
     {
         app(TechnicianEventService::class)->authorize($actor, $event);
         $entries = collect();
-        $append = function (string $type, object $row, string $title, mixed $occurred, mixed $recorded, int $actorId) use ($entries) {
+        $append = function (string $type, object $row, string $title, mixed $occurred, mixed $recorded, ?int $actorId) use ($entries) {
             $entries->push(['id' => $type.':'.$row->id, 'entity_type' => $type, 'entity_id' => $row->id, 'title' => $title, 'occurred_at' => MobileContract::utc($occurred), 'recorded_at' => MobileContract::utc($recorded), 'actor_id' => $actorId]);
         };
+        $ownDispatches = DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->pluck('id');
+        foreach (DB::table('inventory_audits')->where('entity_type', 'event')->where('entity_id', $event)->whereIn('action', ['preparation_started', 'preparation_completed', 'event_reconciled'])->get() as $audit) {
+            $append($audit->action, $audit, match ($audit->action) {
+                'preparation_started' => 'Preparación iniciada', 'preparation_completed' => 'Preparación terminada', default => 'Conciliación del evento completada',
+            }, $audit->created_at, $audit->created_at, $audit->actor_id);
+        }
+        foreach (DB::table('inventory_audits')->where('entity_type', 'event_picking')->whereIn('entity_id', DB::table('event_pickings')->where('event_id', $event)->select('id'))->whereIn('action', ['picking_created', 'picking_completed'])->get() as $audit) {
+            $append($audit->action, $audit, $audit->action === 'picking_created' ? 'Surtido iniciado' : 'Surtido verificado', $audit->created_at, $audit->created_at, $audit->actor_id);
+        }
+        foreach (DB::table('event_dispatches')->whereIn('id', $ownDispatches)->whereNotNull('dispatched_at')->get() as $dispatch) {
+            $append('dispatch', $dispatch, 'Carga entregada por almacén', $dispatch->dispatched_at, $dispatch->dispatched_at, $dispatch->dispatched_by);
+        }
+        foreach (DB::table('event_departure_passes')->where('event_id', $event)->where('technician_id', $actor->id)->get() as $pass) {
+            $append('departure_pass_issued', $pass, 'Pase de salida emitido: '.$pass->folio, $pass->issued_at, $pass->created_at, $pass->issued_by);
+            if ($pass->revoked_at) {
+                $append('departure_pass_revoked', $pass, 'Pase revocado: '.$pass->revocation_reason, $pass->revoked_at, $pass->revoked_at, $pass->revoked_by);
+            }
+        }
         foreach (DB::table('mobile_step_records')->join('mobile_protocol_steps', 'mobile_protocol_steps.id', '=', 'mobile_step_records.step_id')->where('event_id', $event)->select('mobile_step_records.*', 'mobile_protocol_steps.title')->get() as $r) {
             $append('step_record', $r, $r->title, $r->occurred_at, $r->recorded_at, $r->recorded_by);
         }
@@ -43,7 +61,8 @@ class MobileSyncService
         if ($protocol?->closed_at) {
             $append('closure', $protocol, 'Bitácora cerrada', $protocol->closure_occurred_at ?? $protocol->closed_at, $protocol->closure_recorded_at ?? $protocol->updated_at, $protocol->closed_by);
         }
-        $entries = $entries->sort(fn ($a, $b) => [$a['occurred_at'], $a['id']] <=> [$b['occurred_at'], $b['id']])->values();
+        $actors = DB::table('users')->whereIn('id', $entries->pluck('actor_id')->unique())->pluck('name', 'id');
+        $entries = $entries->map(fn ($entry) => $entry + ['actor' => ['id' => $entry['actor_id'], 'name' => $actors[$entry['actor_id']] ?? 'Usuario']])->sort(fn ($a, $b) => [$a['occurred_at'], $a['id']] <=> [$b['occurred_at'], $b['id']])->values();
         $page = LengthAwarePaginator::resolveCurrentPage();
 
         return MobileContract::page(new LengthAwarePaginator($entries->forPage($page, 50)->values(), $entries->count(), 50, $page), fn ($r) => $r);
@@ -67,18 +86,19 @@ class MobileSyncService
         $revoked = DB::table('mobile_sync_seen_events')->where('user_id', $actor->id)->whereNotIn('event_id', $assigned)->orderBy('event_id')->pluck('event_id')->all();
         $ids = array_slice($state['ids'], $state['offset'], config('mobile.page_size'));
         $state['offset'] += count($ids);
-        $data = ['events' => [], 'dispatches' => [], 'protocols' => [], 'receipts' => [], 'step_records' => [], 'incidents' => [], 'return_declarations' => [], 'attachments' => [], 'revoked_event_ids' => $revoked, 'deleted_records' => []];
+        $data = ['events' => [], 'dispatches' => [], 'protocols' => [], 'receipts' => [], 'step_records' => [], 'incidents' => [], 'return_declarations' => [], 'reconciliations' => [], 'departure_passes' => [], 'attachments' => [], 'revoked_event_ids' => $revoked, 'deleted_records' => []];
         foreach ($ids as $event) {
             if (! $assigned->contains($event)) {
                 continue;
             }
             $data['events'][] = $events->detail($event, $actor);
-            DB::table('mobile_sync_seen_events')->updateOrInsert(['user_id' => $actor->id, 'event_id' => $event], ['created_at' => now(), 'updated_at' => now()]);
             $data['protocols'][] = $events->protocol($event, $actor);
-            $dispatchIds = DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->whereIn('status', ['confirmed', 'received', 'closed'])->orderBy('id')->pluck('id');
+            $dispatchIds = DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->whereIn('status', ['preparing', 'prepared', 'confirmed', 'received', 'closed'])->orderBy('id')->pluck('id');
+            $data['departure_passes'][] = app(DeparturePassService::class)->show($event, $actor)['data'];
             foreach ($dispatchIds as $id) {
                 $d = app(MobileDispatchService::class)->show($id, $actor);
                 $data['dispatches'][] = $d;
+                $data['reconciliations'][] = app(MobileReturnService::class)->reconciliation($id);
                 if ($d['receipt']) {
                     $data['receipts'][] = $d['receipt'];
                 }

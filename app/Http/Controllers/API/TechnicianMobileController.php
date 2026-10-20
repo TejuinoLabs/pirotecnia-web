@@ -37,7 +37,7 @@ class TechnicianMobileController extends Controller
                 ksort($value);
             }
 
-return array_map($sort, $value);
+            return array_map($sort, $value);
         };
         try {
             $result = app(IdempotencyService::class)->run($request->user()->id, $request->header('Idempotency-Key'), 'mobile:v1', $sort($payload), $callback);
@@ -97,6 +97,11 @@ return array_map($sort, $value);
         return ['data' => app(TechnicianEventService::class)->protocol($event, $request->user())];
     }
 
+    public function departurePass(Request $request, int $event)
+    {
+        return app(\App\Services\Mobile\DeparturePassService::class)->show($event, $request->user());
+    }
+
     public function record(Request $request, int $event, int $step)
     {
         app(TechnicianEventService::class)->authorize($request->user(), $event, 'mobile.record');
@@ -145,7 +150,7 @@ return array_map($sort, $value);
     public function declareReturn(Request $request, int $event)
     {
         app(TechnicianEventService::class)->authorize($request->user(), $event, 'mobile.return');
-        $rules = [...$this->times(), 'dispatch_id' => ['required', 'integer'], 'expected_revision' => ['required', 'integer', 'min:1'], 'notes' => ['nullable', 'string', 'max:2000'], 'items' => ['required', 'array', 'min:1', 'max:500'], 'items.*' => ['array:dispatch_item_id,quantity_consumed,quantity_returned,quantity_damaged,quantity_lost,notes'], 'items.*.dispatch_item_id' => ['required', 'integer', 'distinct'], 'items.*.notes' => ['nullable', 'string', 'max:2000']];
+        $rules = [...$this->times(), 'dispatch_id' => ['required', 'integer'], 'expected_revision' => ['required', 'integer', 'min:1'], 'notes' => ['nullable', 'string', 'max:2000'], 'items' => ['required', 'array', 'min:1', 'max:500'], 'items.*' => ['array:dispatch_item_id,quantity_consumed,quantity_returned,quantity_damaged,quantity_lost,notes,serial_number'], 'items.*.serial_number' => ['nullable', 'string', 'max:255'], 'items.*.dispatch_item_id' => ['required', 'integer', 'distinct'], 'items.*.notes' => ['nullable', 'string', 'max:2000']];
         foreach (['consumed', 'returned', 'damaged', 'lost'] as $name) {
             $rules['items.*.quantity_'.$name] = Contract::quantityRule();
         }

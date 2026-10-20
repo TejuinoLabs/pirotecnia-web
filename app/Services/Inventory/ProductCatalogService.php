@@ -14,6 +14,7 @@ class ProductCatalogService
         $data = Validator::make($payload, [
             'name' => [$id ? 'sometimes' : 'required', 'string', 'max:255'],
             'sku' => ['nullable', 'string', 'max:255', Rule::unique('products', 'sku')->ignore($id)],
+            'image_url' => ['nullable', 'url:http,https', 'max:4096'],
             'product_role_id' => [$id ? 'sometimes' : 'required', 'exists:product_roles,id'],
             'category_id' => ['nullable', 'exists:categories,id'], 'caliber' => ['nullable', 'string', 'max:100'], 'description' => ['nullable', 'string'],
             'legacy_equipment_id' => ['nullable', 'integer', 'exists:equipments,id', Rule::unique('products', 'legacy_equipment_id')->ignore($id)],
@@ -21,12 +22,19 @@ class ProductCatalogService
             'active' => ['boolean'], 'tracks_inventory' => ['boolean'], 'is_consumable' => ['boolean'], 'is_returnable' => ['boolean'], 'is_sellable' => ['boolean'], 'is_event_usable' => ['boolean'],
             'reference_value' => ['nullable', 'numeric', 'min:0'], 'purchase_cost' => ['nullable', 'numeric', 'min:0'], 'sale_price' => ['nullable', 'numeric', 'min:0'], 'minimum_stock' => ['numeric', 'min:0'],
             'attributes' => ['array'], 'effects' => ['array'], 'effects.*' => ['integer', 'distinct', 'exists:effects,id'], 'colors' => ['array'], 'colors.*' => ['integer', 'distinct', 'exists:colors,id'],
+            'attributes.shape' => ['nullable', 'string', 'max:255'], 'attributes.duration' => ['nullable', 'numeric', 'min:0'], 'attributes.shots' => ['nullable', 'integer', 'min:0'],
         ])->validate();
 
         return DB::transaction(function () use ($data, $id, $actor) {
+            app(\App\Services\Admin\AdminMediaService::class)->assertReference($data['image_url'] ?? null, 'image');
             $product = $id ? Product::whereKey($id)->lockForUpdate()->firstOrFail() : new Product;
             $old = $product->toArray();
             $fields = collect($data)->except(['attributes', 'effects', 'colors'])->all();
+            foreach (['shape', 'duration', 'shots'] as $technical) {
+                if (array_key_exists($technical, $data['attributes'] ?? [])) {
+                    $fields[$technical] = $data['attributes'][$technical];
+                }
+            }
             if (! $id) {
                 $fields['description'] ??= '';
             }
@@ -40,8 +48,18 @@ class ProductCatalogService
             $product->forceFill($fields)->save();
             if (array_key_exists('attributes', $data)) {
                 foreach ($data['attributes'] as $code => $value) {
+                    if (in_array($code, ['shape', 'duration', 'shots'], true)) {
+                        DB::table('product_attribute_values')->where('product_id', $product->id)->whereIn('attribute_definition_id', DB::table('attribute_definitions')->where('code', $code)->select('id'))->delete();
+
+                        continue;
+                    }
                     $definition = DB::table('attribute_definitions')->where('code', $code)->where('active', true)->first();
                     InventoryData::assert($definition !== null, 'Atributo no definido: '.$code);
+                    if ($value === null) {
+                        DB::table('product_attribute_values')->where('product_id', $product->id)->where('attribute_definition_id', $definition->id)->delete();
+
+                        continue;
+                    }
                     $valid = match ($definition->data_type) {
                         'number' => is_numeric($value), 'boolean' => is_bool($value), 'json' => is_array($value), default => is_string($value)
                     };
@@ -77,6 +95,9 @@ class ProductCatalogService
             $attributes[$code] = app(ProductMatcherService::class)->attribute($product, $code);
         }
 
-        return $product->toArray() + ['attributes' => $attributes, 'effects' => app(ProductMatcherService::class)->attribute($product, 'effects'), 'colors' => app(ProductMatcherService::class)->attribute($product, 'colors')];
+        $data = $product->toArray();
+        $data['image_url'] = app(\App\Services\Admin\AdminMediaService::class)->present($product->image_url);
+
+        return $data + ['attributes' => $attributes + ['shape' => $product->shape, 'duration' => $product->duration, 'shots' => $product->shots], 'effects' => app(ProductMatcherService::class)->attribute($product, 'effects'), 'colors' => app(ProductMatcherService::class)->attribute($product, 'colors')];
     }
 }

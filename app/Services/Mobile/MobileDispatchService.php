@@ -18,7 +18,7 @@ class MobileDispatchService
     {
         $d = InventoryData::get('event_dispatches', $id);
         app(TechnicianEventService::class)->authorize($actor, $d->event_id);
-        abort_unless($d->technician_id === $actor->id && in_array($d->status, ['confirmed', 'received', 'closed'], true), 403);
+        abort_unless($d->technician_id === $actor->id && in_array($d->status, ['preparing', 'prepared', 'confirmed', 'received', 'closed'], true), 403);
 
         return $d;
     }
@@ -37,13 +37,17 @@ class MobileDispatchService
         $receipt = DB::table('technician_receipts')->where('event_dispatch_id', $id)->first();
         $r = $receipt ? MobileContract::dates((array) $receipt) + ['received_by' => $receipt->technician_id, 'items' => DB::table('technician_receipt_items')->where('technician_receipt_id', $receipt->id)->orderBy('id')->get()->map(fn ($i) => MobileContract::dates((array) $i))->all()] : null;
 
-        return ['dispatch' => MobileContract::dates((array) $d), 'items' => $items, 'receipt' => $r, 'incident_ids' => $receipt ? DB::table('mobile_incidents')->where('receipt_id', $receipt->id)->orderBy('id')->pluck('id')->all() : [], 'return_revision' => $d->mobile_return_revision];
+        $picking = DB::table('event_pickings')->where('id', $d->picking_id)->first();
+        $warehouseId = $d->dispatched_by ?? $picking?->completed_by ?? $picking?->started_by;
+        $warehouseUser = $warehouseId ? DB::table('users')->where('id', $warehouseId)->first(['id', 'name']) : null;
+
+        return ['dispatch' => MobileContract::dates((array) $d) + ['warehouse_user' => $warehouseUser ? ['id' => $warehouseUser->id, 'display_name' => $warehouseUser->name] : null], 'items' => $items, 'receipt' => $r, 'incident_ids' => $receipt ? DB::table('mobile_incidents')->where('receipt_id', $receipt->id)->orderBy('id')->pluck('id')->all() : [], 'return_revision' => $d->mobile_return_revision];
     }
 
     public function forEvent(int $event, User $actor): array
     {
         app(TechnicianEventService::class)->authorize($actor, $event);
-        $ids = DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->whereIn('status', ['confirmed', 'received', 'closed'])->orderBy('id')->pluck('id');
+        $ids = DB::table('event_dispatches')->where('event_id', $event)->where('technician_id', $actor->id)->whereIn('status', ['preparing', 'prepared', 'confirmed', 'received', 'closed'])->orderBy('id')->pluck('id');
 
         return ['dispatches' => $ids->map(fn ($id) => $this->show($id, $actor))->all(), 'state' => $ids->isEmpty() ? 'pending_dispatch' : 'available', 'message' => $ids->isEmpty() ? 'Este evento todavía no tiene despachos asignados.' : null];
     }

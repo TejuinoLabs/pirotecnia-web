@@ -12,6 +12,8 @@ class Event extends Model
 {
     use HasFactory;
 
+    protected $attributes = ['status' => 'pending'];
+
     protected $fillable = [
         'event_type_id',
         'package_id',
@@ -49,7 +51,7 @@ class Event extends Model
 
     public function packages(): BelongsToMany
     {
-        return $this->belongsToMany(Package::class,'event_package')->withPivot('quantity','price')->withTimestamps();
+        return $this->belongsToMany(Package::class, 'event_package')->withPivot('quantity', 'price')->withTimestamps();
     }
 
     public function equipments(): BelongsToMany
@@ -59,7 +61,7 @@ class Event extends Model
 
     public function employees(): BelongsToMany
     {
-        return $this->belongsToMany(Employee::class)->withTimestamps();
+        return $this->belongsToMany(Employee::class)->withPivot('salary')->withTimestamps();
     }
 
     public function products(): MorphToMany

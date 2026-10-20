@@ -3,7 +3,6 @@
 namespace App\Core\UseCases\Events;
 
 use App\Core\Data\Repositories\EventRepositoryInterface;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
 class GetAllEvents
@@ -15,16 +14,14 @@ class GetAllEvents
     public function execute(int $page): Collection
     {
         $perPage = 10;
-        $events = $this->eventRepository->all()->sortByDesc('date');
-        $slicedEvents = $events->slice(($page - 1) * $perPage, $perPage)->values();
-        $paginator = new LengthAwarePaginator($slicedEvents, $events->count(), $perPage, $page);
+        $paginator = $this->eventRepository->paginate($page, $perPage);
 
         return new Collection([
-            'total' => $events->count(),
+            'total' => $paginator->total(),
             'total_pages' => $paginator->lastPage(),
-            'current_page' => $page,
+            'current_page' => $paginator->currentPage(),
             'per_page' => $perPage,
-            'events' => $paginator->values(),
+            'events' => collect($paginator->items()),
         ]);
     }
 }

@@ -3,8 +3,7 @@
 namespace App\Core\UseCases\Packages;
 
 use App\Core\Data\Repositories\PackageRepositoryInterface;
-use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 class GetAllPackages
 {
@@ -15,16 +14,14 @@ class GetAllPackages
     public function execute(int $page): Collection
     {
         $perPage = 10;
-        $packages = $this->packageRepository->all();
-        $slicedPackages = $packages->slice(($page - 1) * $perPage, $perPage)->values();
-        $paginator = new LengthAwarePaginator($slicedPackages, $packages->count(), $perPage, $page);
+        $paginator = $this->packageRepository->paginate($page, $perPage);
 
         return new Collection([
-            'total' => $packages->count(),
+            'total' => $paginator->total(),
             'total_pages' => $paginator->lastPage(),
-            'current_page' => $page,
+            'current_page' => $paginator->currentPage(),
             'per_page' => $perPage,
-            'packages' => $paginator->values(),
+            'packages' => collect($paginator->items()),
         ]);
     }
 }

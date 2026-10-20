@@ -30,6 +30,11 @@ class Package extends Model
         'valid_until' => 'date',
     ];
 
+    public function getVideoUrlAttribute(?string $value): ?string
+    {
+        return app(\App\Services\Admin\AdminMediaService::class)->present($value);
+    }
+
     protected static function boot()
     {
         parent::boot();
@@ -63,13 +68,13 @@ class Package extends Model
     public function equipments(): BelongsToMany
     {
         return $this->belongsToMany(Equipment::class)
-            ->withPivot(['quantity'])
+            ->withPivot(['quantity', 'required'])
             ->withTimestamps();
     }
 
     public function events(): BelongsToMany
     {
-        return $this->belongsToMany(Event::class,'event_package')->withPivot('quantity','price')->withTimestamps();
+        return $this->belongsToMany(Event::class, 'event_package')->withPivot('quantity', 'price')->withTimestamps();
     }
 
     public function experienceLevel(): BelongsTo

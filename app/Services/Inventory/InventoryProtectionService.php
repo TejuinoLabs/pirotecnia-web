@@ -7,14 +7,14 @@ use Illuminate\Support\Facades\DB;
 
 class InventoryProtectionService
 {
-    public function evaluate(Product $product, float $physical, ?object $event = null): array
+    public function evaluate(Product $product, float $physical, ?object $event = null, ?iterable $loadedRules = null): array
     {
         $protected = 0;
         $score = 0;
         $excluded = false;
         $rules = [];
         $reasons = [];
-        foreach (DB::table('inventory_protection_rules')->where('active', true)->orderByDesc('priority')->get() as $rule) {
+        foreach ($loadedRules ?? DB::table('inventory_protection_rules')->where('active', true)->orderByDesc('priority')->get() as $rule) {
             if ($rule->product_id && $rule->product_id !== $product->id) {
                 continue;
             }

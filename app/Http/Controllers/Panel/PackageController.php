@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Panel;
 
 use App\Http\Controllers\Controller;
 use App\Models\Package;
+use App\Support\PanelPagination;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -13,17 +14,31 @@ class PackageController extends Controller
 {
     //
 
-    public function index()
+    public function index(Request $request)
     {
         $packages = Package::with(['materials', 'equipments', 'experienceLevel'])
             ->withCount('events')
             ->orderBy('name')
+            ->orderBy('id')
             ->get();
+
+        $search = trim((string) $request->query('search', ''));
+        $filteredPackages = $search === '' ? $packages : $packages->filter(function (Package $package) use ($search) {
+            $values = [
+                $package->name,
+                $package->description,
+                $package->experienceLevel?->name,
+                'PKG-' . str_pad((string) $package->id, 4, '0', STR_PAD_LEFT),
+            ];
+
+            return Str::contains(Str::lower(implode(' ', $values)), Str::lower($search));
+        });
+        $listRows = PanelPagination::collection($filteredPackages->values());
 
         $parentItemActive = 8;
         $itemActive = 0;
 
-        return view('panel.settings.packages.index', compact('packages', 'parentItemActive', 'itemActive'));
+        return view('panel.settings.packages.index', compact('packages', 'listRows', 'search', 'parentItemActive', 'itemActive'));
     }
 
     public function create()

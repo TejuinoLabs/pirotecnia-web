@@ -24,13 +24,15 @@ class EventReturnService
                 $total = 0;
                 foreach (['consumed', 'returned', 'damaged', 'lost'] as $field) {
                     InventoryData::assert(($entry['quantity_'.$field] ?? 0) >= 0, 'Cantidad negativa.');
-                    $total += (float) ($entry['quantity_'.$field] ?? 0);
+                    $total += \App\Services\Mobile\MobileContract::milli($entry['quantity_'.$field] ?? 0);
                 }
-                InventoryData::assert(abs($total - (float) $line->quantity) < 0.0005, 'Las cantidades deben sumar lo despachado.');
+                InventoryData::assert($total === \App\Services\Mobile\MobileContract::milli($line->quantity), 'Las cantidades deben sumar lo despachado.');
+                app(\App\Services\Mobile\DispatchIdentityService::class)->validateSerial($line, $entry['serial_number'] ?? null, $total);
                 InventoryData::assert(! $line->is_returnable || (float) ($entry['quantity_consumed'] ?? 0) === 0.0, 'El equipo retornable no puede consumirse.');
                 InventoryData::insert('event_return_items', ['event_return_id' => $id, 'product_id' => $line->product_id, 'quantity_dispatched' => $line->quantity, ...$entry]);
             }
             InventoryData::update('events', $eventId, ['logistics_status' => 'awaiting_return']);
+            app(\App\Services\Mobile\DeparturePassService::class)->invalidate($eventId, $actor, 'El almacén inició la devolución física.');
             app(AuditService::class)->record($actor, 'return_created', 'event_return', $id, $data);
 
             return $this->show($id);
@@ -54,7 +56,7 @@ class EventReturnService
                 if ((float) $item->quantity_damaged > 0) {
                     InventoryData::assert($return->damaged_location_id !== null, 'Selecciona ubicación de daños.');
                     $damaged = InventoryData::get('inventory_locations', $return->damaged_location_id);
-                    InventoryData::assert($damaged->type === 'damaged' && $damaged->active, 'Ubicación de daños inválida.');
+                    InventoryData::assert(in_array($damaged->type, ['damaged', 'quarantine'], true) && $damaged->active, 'Ubicación de daños inválida.');
                 }
                 foreach (['returned' => ['event_return', $return->warehouse_location_id], 'damaged' => ['damage', $return->damaged_location_id], 'lost' => ['loss', null], 'consumed' => ['consumption', null]] as $field => [$type, $destination]) {
                     $quantity = (float) $item->{'quantity_'.$field};
@@ -68,12 +70,13 @@ class EventReturnService
             InventoryData::update('event_returns', $id, ['status' => 'confirmed', 'received_by' => $actor, 'returned_at' => now()]);
             InventoryData::update('event_dispatches', $dispatch->id, ['status' => 'closed']);
             DB::table('mobile_return_declarations')->where('dispatch_id', $dispatch->id)->where('status', 'declared')->update(['status' => 'warehouse_confirmed', 'warehouse_confirmed_at' => now(), 'warehouse_return_id' => $id, 'updated_at' => now()]);
-            $open = DB::table('event_dispatches')->where('event_id', $return->event_id)->where('status', '!=', 'closed')->exists();
+            $open = DB::table('event_dispatches')->where('event_id', $return->event_id)->whereNotIn('status', ['closed', 'cancelled'])->exists();
             $open = $open || DB::table('requirement_allocations')->whereIn('event_requirement_id', DB::table('event_requirements')->where('event_id', $return->event_id)->select('id'))->whereIn('status', ['reserved', 'picked'])->exists();
             if (! $open) {
                 InventoryData::update('events', $return->event_id, ['logistics_status' => 'closed']);
                 DB::table('event_requirements')->where('event_id', $return->event_id)->update(['status' => 'closed', 'updated_at' => now()]);
                 DB::table('event_preparations')->where('event_id', $return->event_id)->update(['status' => 'closed', 'updated_at' => now()]);
+                app(AuditService::class)->record($actor, 'event_reconciled', 'event', $return->event_id);
             }
             app(AuditService::class)->record($actor, 'return_confirmed', 'event_return', $id);
 

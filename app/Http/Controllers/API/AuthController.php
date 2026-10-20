@@ -15,6 +15,11 @@ class AuthController extends Controller
     {
         if (Auth::attempt($request->only('email', 'password'))) {
             $user = User::find(Auth::user()->id);
+            if ($user->status !== 'active') {
+                Auth::logout();
+
+                return response()->json(['message' => 'La cuenta está desactivada.'], 403);
+            }
             $token = $user->createToken('access_token')->accessToken;
             $data = [
                 'user' => $user,
@@ -25,6 +30,7 @@ class AuthController extends Controller
         } else {
             return response()->json([
                 'error' => 'Invalid credentials',
+                'message' => 'Credenciales no válidas.',
             ], 401);
         }
     }

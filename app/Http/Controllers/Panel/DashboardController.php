@@ -20,6 +20,7 @@ class DashboardController extends Controller
         [$previousStartDate, $previousEndDate] = $this->resolvePreviousRange($startDate, $endDate);
 
         $events = Event::with(['packages', 'typeEvent', 'employees.experienceLevel', 'products'])
+            ->whereBetween('event_date', [$previousStartDate->toDateTimeString(), $endDate->toDateTimeString()])
             ->orderBy('event_date')
             ->get();
 

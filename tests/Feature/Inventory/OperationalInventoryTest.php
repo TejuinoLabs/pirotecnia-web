@@ -208,9 +208,10 @@ class OperationalInventoryTest extends TestCase
         $event = $this->event();
         $dispatch = $this->dispatch($event, $product);
         $id = $dispatch['dispatch']['id'];
-        app(EventDispatchService::class)->confirm($id, $this->admin->id);
+        $dispatcher = User::factory()->create(['role_id' => 1, 'phone' => '3121111122']);
+        app(EventDispatchService::class)->confirm($id, $dispatcher->id);
         $other = User::factory()->create(['phone' => '3121111111']);
-        $payload = ['items' => [['dispatch_item_id' => $dispatch['items'][0]->id, 'received_quantity' => 3, 'status' => 'received']]];
+        $payload = ['expected_version' => DB::table('event_dispatches')->where('id', $id)->value('version'), 'items' => [['dispatch_item_id' => $dispatch['items'][0]->id, 'received_quantity' => '3.000', 'status' => 'received']]];
         $this->actingAs($other, 'api')->postJson("/api/technician/dispatches/$id/receive", $payload)->assertForbidden();
         $this->actingAs($this->admin, 'api')->postJson("/api/technician/dispatches/$id/receive", $payload, ['Idempotency-Key' => 'receipt-1'])->assertOk();
         $this->postJson("/api/technician/dispatches/$id/receive", $payload, ['Idempotency-Key' => 'receipt-1'])->assertOk();

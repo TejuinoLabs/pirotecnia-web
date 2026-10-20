@@ -9,7 +9,11 @@ interface EventRepositoryInterface
 {
     public function all(): Collection;
 
+    public function paginate(int $page, int $perPage = 10): \Illuminate\Pagination\LengthAwarePaginator;
+
     public function getEventsByEmployee(int $employeeId): Collection;
+
+    public function paginateByEmployee(int $employeeId, int $page, int $perPage = 10): \Illuminate\Pagination\LengthAwarePaginator;
 
     public function find(int $eventId): ?Event;
 

@@ -4,8 +4,8 @@ namespace App\Presentation\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Request;
 
 class AuthController extends Controller
 {
@@ -13,6 +13,11 @@ class AuthController extends Controller
     {
         if (Auth::attempt($request->only('email', 'password'))) {
             $user = User::find(Auth::user()->id);
+            if ($user->status !== 'active') {
+                Auth::logout();
+
+                return response()->json(['message' => 'La cuenta está desactivada.'], 403);
+            }
             $token = $user->createToken('access_token')->accessToken;
             $data = [
                 'user' => $user,
@@ -23,6 +28,7 @@ class AuthController extends Controller
         } else {
             return response()->json([
                 'error' => 'Invalid credentials',
+                'message' => 'Credenciales no válidas.',
             ], 401);
         }
     }

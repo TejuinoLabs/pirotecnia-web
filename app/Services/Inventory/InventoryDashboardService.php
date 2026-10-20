@@ -10,11 +10,15 @@ class InventoryDashboardService
     public function summary(): array
     {
         $demand = app(InventoryDemandService::class)->project();
-        $products = Product::where('active', true)->get()->map(fn ($p) => $p->toArray() + app(InventoryAvailabilityService::class)->stock($p, null, null, null, $demand));
+        $catalog = Product::where('active', true)->get();
+        app(ProductMatcherService::class)->loadAttributes($catalog);
+        $stockContext = app(InventoryAvailabilityService::class)->context(null, null, null, $catalog->pluck('id'));
+        $products = $catalog->map(fn ($p) => $p->attributesToArray() + app(InventoryAvailabilityService::class)->stock($p, null, null, null, $demand, null, $stockContext));
         $risks = [];
         $events = DB::table('events')->where('event_date', '>=', now())->whereNotIn('logistics_status', ['closed'])->orderBy('event_date')->limit(50)->get();
+        $coverages = app(EventCoverageService::class)->coverageMany($events->pluck('id')->all());
         foreach ($events as $event) {
-            $coverage = app(EventCoverageService::class)->coverage($event->id, null, false);
+            $coverage = $coverages[$event->id];
             if ($coverage['status'] !== 'covered') {
                 $risks[] = ['event_id' => $event->id, 'client_name' => $event->client_name, 'event_date' => $event->event_date, ...$coverage];
             }

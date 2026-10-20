@@ -1,4 +1,5 @@
 import { formatInventoryQuantity } from './inventory-quantity.js';
+import { catalogAutocomplete } from './catalog-autocomplete.js';
 
 const root = document.getElementById('inventory-panel');
 if (root) {
@@ -37,7 +38,8 @@ if (root) {
     const canButton = (permission, ...args) => permissions.has(permission) && button(...args);
     const createButton = (permission, label, action, parent = toolbar) => canButton(permission, isSettings ? root.dataset.createLabel || label : label, action, isSettings ? headerActions : parent);
     async function api(path, method = 'GET', payload, key) {
-        const response = await fetch(`${base}/${path}`, { method, credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.getElementById('inventory-csrf').value, ...(key ? { 'Idempotency-Key': key } : {}) }, ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) });
+        const multipart = payload instanceof FormData;
+        const response = await fetch(`${base}/${path}`, { method, credentials: 'same-origin', headers: { Accept: 'application/json', ...(!multipart ? { 'Content-Type': 'application/json' } : {}), 'X-CSRF-TOKEN': document.getElementById('inventory-csrf').value, ...(key ? { 'Idempotency-Key': key } : {}) }, ...(payload === undefined ? {} : { body: multipart ? payload : JSON.stringify(payload) }) });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error([data.message || 'No fue posible completar la operación.', ...Object.values(data.errors || {}).flat()].join(' '));
         return data;
@@ -45,6 +47,19 @@ if (root) {
     function field(name, label, type = 'text', extra = {}) { return { name, label, type, ...extra }; }
     const select = (name, label, key, extra = {}) => field(name, label, 'select', { options: options(key), ...extra });
     function inputField(spec, values = {}) {
+        if (spec.type === 'catalog-autocomplete') {
+            return { spec, ...catalogAutocomplete({
+                label: spec.label, name: spec.name, description: values.description || '', selectedId: values[spec.name],
+                products: () => config.catalogs.products || [], roles: config.catalogs.product_roles || [],
+                createProduct: async details => {
+                    const product = await spec.createProduct(details, values);
+                    const catalogProduct = { ...product, name: product.display_name || product.name };
+                    const index = config.catalogs.products.findIndex(item => Number(item.id) === Number(product.id));
+                    if (index >= 0) config.catalogs.products[index] = catalogProduct; else config.catalogs.products.push(catalogProduct);
+                    return catalogProduct;
+                },
+            }) };
+        }
         const wrapper = el('label', null, 'block space-y-2'); wrapper.append(el('span', spec.label, 'text-sm text-primary-200'));
         if (spec.type === 'attributes') {
             const children = (config.catalogs.attribute_definitions || []).map(def => {
@@ -83,7 +98,7 @@ if (root) {
             else if (spec.type === 'checkbox') result[spec.name] = input.checked;
             else if (input.value === '' && spec.optional) continue;
             else if (spec.type === 'json') { try { result[spec.name] = JSON.parse(input.value); } catch { throw new Error(`Revisa el formato de ${spec.label}.`); } }
-            else if (spec.type === 'number' || spec.type === 'select' && !spec.string) result[spec.name] = Number(input.value);
+            else if (spec.type === 'number' || spec.type === 'catalog-autocomplete' || spec.type === 'select' && !spec.string) result[spec.name] = Number(input.value);
             else result[spec.name] = input.value;
         }
         return result;
@@ -97,7 +112,7 @@ if (root) {
             const addRow = (initial = {}) => { const card = el('div', null, 'rounded-xl border border-primary-600 p-4'); const rg = el('div', null, 'grid gap-3 sm:grid-cols-2'); const fs = rows.fields.map(s => inputField(s, initial)); fs.forEach(x => rg.append(x.wrapper));
                 const productField = fs.find(x => x.spec.name === 'product_id');
                 const priceField = fs.find(x => ['unit_price', 'unit_cost'].includes(x.spec.name));
-                if (productField && priceField) {
+                if (productField && priceField && !priceField.spec.readonly) {
                     const price = () => { const product = (config.catalogs.products || []).find(product => product.id === Number(productField.input.value)); priceField.input.value = formatInventoryQuantity(product?.[priceField.spec.name === 'unit_price' ? 'sale_price' : 'purchase_cost'] ?? 0); };
                     productField.input.addEventListener('change', price);
                     if (initial[priceField.spec.name] == null) price();
@@ -304,9 +319,40 @@ if (root) {
         const data = await api(`purchases/${id}`);
         form(`Recepción de compra #${id}`, [storage(), notes()], (values, items, key) => api(`purchases/${id}/receive`, 'POST', { ...values, items: items.filter(item => item.quantity > 0).map(item => ({ purchase_item_id: item.purchase_item_id, quantity: item.quantity })) }, key), {}, { fixed: true, initial: data.items.filter(item => Number(item.quantity) > Number(item.received_quantity)).map(item => ({ purchase_item_id: item.id, product_name: item.product_name || productName(item.product_id), quantity: Number(item.quantity) - Number(item.received_quantity) })), fields: [field('purchase_item_id', 'Línea', 'number', { readonly: true }), field('product_name', 'Producto o material', 'text', { readonly: true }), field('quantity', 'Cantidad recibida', 'number')] });
     }
+    function purchaseDocumentUpload() {
+        document.getElementById('inventory-dialog-title').textContent = 'Importar compra desde PDF';
+        dialogContent.replaceChildren(el('p', 'Sube un presupuesto de venta con texto seleccionable (máximo 5 MB). Se extraerán fecha, cantidades y costos; completa el proveedor y relaciona cada concepto con tu catálogo.', 'mb-5 text-sm text-primary-200'));
+        const upload = el('form', null, 'space-y-5');
+        const label = el('label', 'Documento PDF', 'block space-y-2');
+        const file = el('input'); file.type = 'file'; file.accept = 'application/pdf,.pdf'; file.required = true; label.append(file); upload.append(label);
+        const error = el('p', '', 'text-warning'); error.setAttribute('role', 'alert'); upload.append(error);
+        const submit = el('button', 'Leer documento', 'rounded-xl bg-secondary px-5 py-3 font-bold text-primary-900 disabled:opacity-50'); submit.type = 'submit'; upload.append(submit);
+        upload.addEventListener('submit', async event => {
+            event.preventDefault(); submit.disabled = true;
+            try {
+                if (file.files[0].size > 5 * 1024 * 1024) throw new Error('El PDF debe pesar como máximo 5 MB.');
+                const payload = new FormData(); payload.append('document', file.files[0]);
+                const data = await api('purchases/documents/preview', 'POST', payload);
+                if (data.purchase_id) { dialog.close(); window.location.assign(`/panel/purchases/${data.purchase_id}`); return; }
+                dialog.close();
+                const fields = purchaseFields().filter(spec => !['purchase_date', 'tax', 'expected_date'].includes(spec.name)).map(spec => spec.name === 'supplier_name' ? { ...spec, optional: false } : spec);
+                const status = fields.find(spec => spec.name === 'status'); status.value = 'ordered'; status.options = status.options.filter(([value]) => value !== 'received' || permissions.has('purchases.receive'));
+                form('Registrar compra del documento', fields, (values, items) => api('purchases/documents/import', 'POST', { ...values, token: data.token, items: items.map(item => ({ product_id: item.product_id })) }), {}, {
+                    fixed: true,
+                    initial: data.items.map((item, line_index) => ({ ...item, line_index, product_id: item.product_id ?? '' })),
+                    fields: [field('description', 'Concepto en el documento', 'text', { readonly: true }), field('product_id', 'Producto o material del catálogo', 'catalog-autocomplete', {
+                        createProduct: (details, row) => api('purchases/documents/products', 'POST', { ...details, token: data.token, line_index: row.line_index }),
+                    }), field('quantity', 'Cantidad', 'number', { readonly: true }), field('unit_cost', 'Costo unitario ($)', 'number', { readonly: true, step: '0.01' })],
+                });
+                dialogContent.prepend(el('p', `${data.document_type} · Fecha: ${data.purchase_date} · ${data.items.length} conceptos · Total: ${currency(data.total)}. ${data.warnings.join(' ')} Busca y selecciona cada producto; si no hay coincidencias, créalo aquí mismo.`, 'mb-5 text-sm text-primary-200'));
+            } catch (e) { error.textContent = e.message; } finally { submit.disabled = false; }
+        });
+        dialogContent.append(upload); dialog.showModal();
+    }
     async function purchases() {
         title.textContent = 'Listado de compras';
         createButton('purchases.create', 'Nueva compra', () => purchaseForm());
+        canButton('purchases.create', 'Importar PDF', purchaseDocumentUpload, headerActions);
         const filters = [inputField(field('q', 'Proveedor', 'text', { optional: true })), inputField(field('status', 'Estado', 'select', { optional: true, string: true, options: [['draft', 'Borrador'], ['ordered', 'Pendiente'], ['partial', 'Recepción parcial'], ['received', 'Recibida'], ['cancelled', 'Cancelada']] }))];
         filters.forEach(filter => toolbar.append(filter.wrapper));
         const show = async () => { content.replaceChildren(); const path = `purchases?${new URLSearchParams(readFields(filters))}`;
@@ -387,7 +433,7 @@ if (root) {
         for (const dispatch of data.dispatches) {
             const result = await api(`event-dispatches/${dispatch.id}`); const box = el('div', null, 'space-y-3 rounded-xl border border-primary-600 p-4'); content.append(box); box.append(el('h3', `Salida #${dispatch.id} · ${pretty(dispatch.status)}`, 'font-bold'));
             table(result.items, [['id', 'Línea'], ['product_id', 'Producto'], ['quantity', 'Cantidad entregada'], ['is_returnable', 'Retornable']], box);
-            if (dispatch.status === 'draft') canButton('inventory.dispatch', 'Confirmar salida física', () => form('Confirmar salida de almacén', [], (_, __, key) => api(`event-dispatches/${dispatch.id}/confirm`, 'POST', {}, key)), box);
+            if (['draft', 'prepared'].includes(dispatch.status)) canButton('inventory.dispatch', 'Confirmar salida física', () => form('Confirmar salida de almacén', [], (_, __, key) => api(`event-dispatches/${dispatch.id}/confirm`, 'POST', {}, key)), box);
             if (['confirmed', 'received'].includes(dispatch.status) && !data.returns.some(r => r.event_dispatch_id === dispatch.id)) canButton('inventory.return', 'Registrar conciliación', () => form('Devolución y consumo', [warehouse(), select('damaged_location_id', 'Ubicación de daños', 'inventory_locations', { optional: true }), notes()], (d, items, key) => api(`${path}/returns`, 'POST', { ...d, event_dispatch_id: dispatch.id, items }, key), {}, { fixed: true, initial: result.items.map(i => ({ dispatch_item_id: i.id, quantity_returned: Number(i.quantity), quantity_consumed: 0, quantity_damaged: 0, quantity_lost: 0 })), fields: [field('dispatch_item_id', 'Línea despachada', 'number'), ...['returned', 'consumed', 'damaged', 'lost'].map((f, i) => field(`quantity_${f}`, ['Devuelto', 'Consumido', 'Dañado', 'Perdido'][i], 'number', { value: 0 }))] }), box);
         }
         for (const ret of data.returns) if (ret.status === 'draft') canButton('inventory.return', `Confirmar devolución #${ret.id}`, () => form('Confirmar devolución', [], (_, __, key) => api(`event-returns/${ret.id}/confirm`, 'POST', {}, key)), content);

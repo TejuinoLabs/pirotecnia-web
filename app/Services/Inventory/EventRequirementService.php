@@ -21,8 +21,15 @@ class EventRequirementService
             $coveredLegacy = [];
             foreach ($event->packages as $package) {
                 $quantity = (float) ($package->pivot->quantity ?? 1);
-                $rows = DB::table('package_requirements')->where('package_id', $package->id)->orderBy('sort_order')->get();
+                $rows = DB::table('package_requirements')->where('package_id', $package->id)->where('active', true)->orderBy('sort_order')->get();
                 foreach ($rows as $row) {
+                    if ((InventoryData::json($row->metadata)['required'] ?? true) === false) {
+                        if ($row->product_id) {
+                            $coveredLegacy[] = $row->product_id;
+                        }
+
+                        continue;
+                    }
                     $constraints = $requirements->constraints('package_requirement', $row->id);
                     $categoryId = $row->category_id;
                     if ($row->profile_id) {

@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Route;
 
 return function (string $auth, string $prefix = '') {
     Route::middleware($auth)->prefix($prefix)->group(function () {
+        Route::post('events/{event}/departure-passes', [\App\Http\Controllers\API\DeparturePassController::class, 'issue'])->whereNumber('event');
+        Route::post('events/{event}/departure-passes/{pass}/revoke', [\App\Http\Controllers\API\DeparturePassController::class, 'revoke'])->whereNumber(['event', 'pass']);
         foreach ([['get', 'sales', 'index'], ['post', 'sales', 'store'], ['get', 'sales/{id}', 'show'], ['put', 'sales/{id}', 'update'], ['delete', 'sales/{id}', 'destroy']] as [$method, $uri, $action]) {
             Route::$method($uri, [\App\Http\Controllers\API\SaleController::class, $action]);
         }
@@ -19,6 +21,9 @@ return function (string $auth, string $prefix = '') {
             ['post', 'inventory/adjustments', 'adjustment', 'inventory.adjust'], ['post', 'inventory/movements/{movement}/reverse', 'correction', 'inventory.adjust'],
             ['post', 'inventory/locations/{location}/adopt', 'adopt', 'inventory.adjust'],
             ['get', 'purchases', 'purchases', 'purchases.view'], ['post', 'purchases', 'createPurchase', 'purchases.create'],
+            ['post', 'purchases/documents/preview', 'previewPurchaseDocument', 'purchases.create'],
+            ['post', 'purchases/documents/products', 'createPurchaseDocumentProduct', 'purchases.create'],
+            ['post', 'purchases/documents/import', 'importPurchaseDocument', 'purchases.create'],
             ['get', 'purchases/{purchase}', 'purchase', 'purchases.view'], ['put', 'purchases/{purchase}', 'updatePurchase', 'purchases.create'],
             ['delete', 'purchases/{purchase}', 'cancelPurchase', 'purchases.create'],
             ['post', 'purchases/{purchase}/receive', 'receivePurchase', 'purchases.receive'], ['post', 'purchases/{purchase}/cancel', 'cancelPurchase', 'purchases.create'],
@@ -37,6 +42,7 @@ return function (string $auth, string $prefix = '') {
             ['post', 'events/{event}/pickings/{picking}/complete', 'completePicking', 'events.prepare'],
             ['get', 'events/{event}/dispatches', 'dispatches', 'inventory.view'], ['post', 'events/{event}/dispatches', 'createDispatch', 'inventory.dispatch'],
             ['get', 'event-dispatches/{dispatch}', 'dispatch', 'inventory.view'], ['post', 'event-dispatches/{dispatch}/confirm', 'confirmDispatch', 'inventory.dispatch'],
+            ['put', 'event-dispatches/{dispatch}/identity', 'identifyDispatch', 'inventory.dispatch'],
             ['post', 'events/{event}/returns', 'createReturn', 'inventory.return'], ['post', 'event-returns/{return}/confirm', 'confirmReturn', 'inventory.return'],
         ];
         foreach ($routes as [$verb, $uri, $method, $permission]) {

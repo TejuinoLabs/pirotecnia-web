@@ -59,6 +59,11 @@ class TechnicianMobileApiTest extends TestCase
         $this->product = Product::findOrFail(app(ProductCatalogService::class)->save(['name' => 'Bomba', 'caliber' => '3', 'product_role_id' => 1, 'unit' => 'pz', 'sku' => 'BOM-3'], $this->admin->id)['id']);
         $this->event->products()->attach($this->product->id, ['quantity' => 3, 'price' => 100]);
         app(InventoryMovementService::class)->record($this->product->id, 10, null, $this->warehouse, 'adjustment_in', $this->admin->id, 'Apertura');
+        $this->prepareDispatch();
+    }
+
+    private function prepareDispatch(bool $confirm = true): void
+    {
         app(EventRequirementService::class)->snapshot($this->event, $this->admin->id);
         $requirement = DB::table('event_requirements')->where('event_id', $this->event->id)->value('id');
         app(RequirementAllocationService::class)->allocate($this->event->id, $requirement, ['warehouse_location_id' => $this->warehouse, 'allocations' => [['product_id' => $this->product->id, 'quantity' => 3]]], $this->admin);
@@ -71,7 +76,9 @@ class TechnicianMobileApiTest extends TestCase
         $dispatch = app(EventDispatchService::class)->create($this->event->id, ['picking_id' => $picking['picking']['id'], 'technician_id' => $this->tech->id], $this->admin->id);
         $this->dispatch = $dispatch['dispatch']['id'];
         $this->line = $dispatch['items'][0]->id;
-        app(EventDispatchService::class)->confirm($this->dispatch, $this->admin->id);
+        if ($confirm) {
+            app(EventDispatchService::class)->confirm($this->dispatch, $this->admin->id);
+        }
     }
 
     private function makeEvent(): Event
@@ -118,7 +125,7 @@ class TechnicianMobileApiTest extends TestCase
 
     private function receive(string $quantity = '3.000', string $status = 'received')
     {
-        return $this->postJson('/api/technician/dispatches/'.$this->dispatch.'/receive', ['items' => [['dispatch_item_id' => $this->line, 'received_quantity' => $quantity, 'status' => $status, 'notes' => 'Recepción revisada']]], ['Idempotency-Key' => (string) Str::uuid()]);
+        return $this->postJson('/api/technician/dispatches/'.$this->dispatch.'/receive', ['expected_version' => DB::table('event_dispatches')->where('id', $this->dispatch)->value('version'), 'items' => [['dispatch_item_id' => $this->line, 'received_quantity' => $quantity, 'status' => $status, 'notes' => 'Recepción revisada']]], ['Idempotency-Key' => (string) Str::uuid()]);
     }
 
     public function test_routes_require_login_and_assignment_including_legacy_detail(): void
@@ -126,7 +133,7 @@ class TechnicianMobileApiTest extends TestCase
         $this->getJson('/api/technician/events')->assertUnauthorized();
         $this->actingAs($this->other, 'api');
         $this->getJson('/api/technician/events')->assertOk()->assertJsonPath('meta.total', 0);
-        foreach (['', '/protocol', '/dispatch', '/timeline', '/incidents', '/return-declarations'] as $suffix) {
+        foreach (['', '/protocol', '/dispatch', '/timeline', '/incidents', '/return-declarations', '/departure-pass'] as $suffix) {
             $this->getJson($this->url($suffix))->assertForbidden();
         }
         $this->getJson('/api/event/'.$this->event->id)->assertForbidden();
@@ -200,7 +207,9 @@ class TechnicianMobileApiTest extends TestCase
         $this->assertDatabaseCount('mobile_record_corrections', 1);
         $saved = json_decode(DB::table('mobile_step_records')->value('original_payload'), true);
         $this->assertSame($original['occurred_at'], $saved['occurred_at']);
-        $this->getJson($this->url('/timeline'))->assertOk()->assertJsonPath('meta.total', 2)->assertJsonPath('data.1.entity_type', 'correction');
+        $timeline = $this->getJson($this->url('/timeline'))->assertOk()->json('data');
+        $this->assertCount(1, array_filter($timeline, fn ($entry) => $entry['entity_type'] === 'correction'));
+        $this->assertContains('dispatch', array_column($timeline, 'entity_type'));
         $this->assign($this->other, $this->event);
         $this->actingAs($this->other, 'api');
         $this->write('PATCH', $url, array_replace($payload, ['expected_revision' => 2]))->assertForbidden();
@@ -300,6 +309,8 @@ class TechnicianMobileApiTest extends TestCase
             $this->write('POST', $this->url('/steps/'.$step['id'].'/records'), $this->recordPayload($p['version']))->assertCreated();
         }
         $key = (string) Str::uuid();
+        $this->write('POST', $this->url('/close'), $close)->assertConflict()->assertJsonPath('code', 'MATERIALS_PENDING');
+        $this->write('POST', $this->url('/return-declarations'), [...$this->times(), 'dispatch_id' => $this->dispatch, 'expected_revision' => 1, 'items' => [['dispatch_item_id' => $this->line, 'quantity_consumed' => '3.000', 'quantity_returned' => '0.000', 'quantity_damaged' => '0.000', 'quantity_lost' => '0.000']]])->assertCreated();
         $first = $this->write('POST', $this->url('/close'), $close, $key)->assertOk()->assertJsonPath('data.status', 'closed')->assertJsonPath('data.logistics_status', 'awaiting_return')->json();
         $this->write('POST', $this->url('/close'), $close, $key)->assertOk()->assertExactJson($first);
         $this->getJson($this->url('/protocol'))->assertOk()->assertJsonPath('data.status', 'closed');
@@ -353,6 +364,206 @@ class TechnicianMobileApiTest extends TestCase
         $this->receive()->assertOk();
         $this->write('POST', $this->url('/incidents'), [...$this->times(), 'category' => 'safety', 'severity' => 'critical', 'description' => 'Requiere revisión del responsable'])->assertCreated();
         $this->write('POST', $this->url('/close'), [...$this->times(), 'protocol_version' => $p['version'], 'notes' => 'Cierre con comentarios'])->assertConflict()->assertJsonPath('code', 'CRITICAL_INCIDENTS_PENDING');
+    }
+
+    public function test_materials_summary_legacy_listing_and_pending_pass_have_no_issuance_side_effects(): void
+    {
+        $this->actingAs($this->tech, 'api');
+        $this->getJson($this->url())->assertOk()->assertJsonPath('data.materials_status', 'ready_to_receive')->assertJsonPath('data.materials_summary.required_lines', 1)->assertJsonPath('data.materials_summary.prepared_lines', 1)->assertJsonPath('data.materials_summary.delivered_lines', 1)->assertJsonPath('data.materials_summary.verified_lines', 0)->assertJsonPath('data.permissions.report_incident', true);
+        $this->getJson('/api/employee-events')->assertOk()->assertJsonPath('data.events.0.materials_status', 'ready_to_receive');
+        $this->getJson($this->url('/departure-pass'))->assertOk()->assertJsonPath('data.status', 'blocked')->assertJsonPath('data.folio', null);
+        $this->assertDatabaseCount('event_departure_passes', 0);
+        $this->receive()->assertOk();
+        $this->getJson($this->url())->assertOk()->assertJsonPath('data.materials_status', 'received')->assertJsonPath('data.materials_summary.verified_lines', 1);
+        $this->getJson($this->url('/departure-pass'))->assertOk()->assertJsonPath('data.status', 'not_issued');
+        $this->actingAs($this->other, 'api')->getJson($this->url('/departure-pass'))->assertForbidden();
+        $this->assertDatabaseCount('event_departure_passes', 0);
+    }
+
+    public function test_receipt_version_actor_identity_legacy_transition_and_retries_are_enforced(): void
+    {
+        $this->actingAs($this->tech, 'api');
+        $url = '/api/technician/dispatches/'.$this->dispatch.'/receive';
+        $payload = ['items' => [['dispatch_item_id' => $this->line, 'received_quantity' => '3.000', 'status' => 'received']]];
+        $key = (string) Str::uuid();
+        $this->postJson($url, $payload, ['Idempotency-Key' => $key])->assertConflict()->assertJsonPath('code', 'DISPATCH_VERSION_CONFLICT');
+        $this->postJson($url, ['expected_version' => 1, ...$payload], ['Idempotency-Key' => $key])->assertConflict();
+        $this->postJson($url, ['expected_version' => 2, ...$payload], ['Idempotency-Key' => $key])->assertOk()->assertJsonPath('version', 3);
+        $this->postJson($url, ['expected_version' => 2, ...$payload], ['Idempotency-Key' => $key])->assertOk()->assertJsonPath('version', 3);
+        $this->postJson($url, ['expected_version' => 2, 'notes' => 'Otro contenido', ...$payload], ['Idempotency-Key' => $key])->assertConflict()->assertJsonPath('code', 'IDEMPOTENCY_KEY_CONFLICT');
+        $this->assertDatabaseCount('technician_receipts', 1);
+        $this->event = $this->makeEvent();
+        $this->assign($this->tech, $this->event);
+        $this->event->products()->attach($this->product->id, ['quantity' => 3, 'price' => 100]);
+        $this->prepareDispatch();
+        InventoryData::update('event_dispatches', $this->dispatch, ['dispatched_by' => $this->tech->id]);
+        $this->receive()->assertForbidden();
+        InventoryData::update('event_dispatches', $this->dispatch, ['dispatched_by' => $this->admin->id, 'version' => null, 'content_hash' => null]);
+        $payload['items'][0]['dispatch_item_id'] = $this->line;
+        $this->postJson('/api/technician/dispatches/'.$this->dispatch.'/receive', $payload, ['Idempotency-Key' => (string) Str::uuid()])->assertOk()->assertJsonPath('version', null);
+    }
+
+    public function test_official_pass_is_authorized_versioned_audited_revocable_and_expires(): void
+    {
+        $this->actingAs($this->tech, 'api');
+        $this->receive()->assertOk();
+        $url = '/api/events/'.$this->event->id.'/departure-passes';
+        $payload = ['technician_id' => $this->tech->id, 'expires_at' => now()->addHour()->utc()->format('Y-m-d\TH:i:s\Z'), 'dispatches' => [['id' => $this->dispatch, 'version' => 3]]];
+        $key = (string) Str::uuid();
+        $this->postJson($url, $payload, ['Idempotency-Key' => $key])->assertForbidden();
+        $this->actingAs($this->admin, 'api');
+        $this->postJson($url, [...$payload, 'dispatches' => [['id' => $this->dispatch, 'version' => 2]]], ['Idempotency-Key' => $key])->assertConflict();
+        $pass = $this->postJson($url, $payload, ['Idempotency-Key' => $key])->assertCreated()->assertJsonPath('data.status', 'valid')->json('data');
+        $this->assertNotEmpty($pass['folio']);
+        $this->postJson($url, $payload, ['Idempotency-Key' => $key])->assertCreated()->assertJsonPath('data.id', $pass['id']);
+        $this->assertDatabaseCount('event_departure_passes', 1);
+        $this->assertDatabaseHas('inventory_audits', ['action' => 'departure_pass_issued', 'entity_id' => $pass['id']]);
+        $this->actingAs($this->tech, 'api')->getJson($this->url())->assertOk()->assertJsonPath('data.materials_status', 'departure_authorized');
+        $this->getJson('/api/technician/sync/bootstrap')->assertOk()->assertJsonPath('data.departure_passes.0.status', 'valid');
+        $this->travel(61)->minutes();
+        $this->getJson($this->url('/departure-pass'))->assertOk()->assertJsonPath('data.status', 'expired');
+        $this->actingAs($this->admin, 'api');
+        $revokeUrl = $url.'/'.$pass['id'].'/revoke';
+        $revoke = ['expected_version' => 1, 'reason' => 'Carga retenida para nueva revisión'];
+        $key = (string) Str::uuid();
+        $this->postJson($revokeUrl, $revoke, ['Idempotency-Key' => $key])->assertOk();
+        $this->postJson($revokeUrl, $revoke, ['Idempotency-Key' => $key])->assertOk();
+        $this->actingAs($this->tech, 'api')->getJson($this->url('/departure-pass'))->assertOk()->assertJsonPath('data.status', 'revoked');
+        $timeline = $this->getJson($this->url('/timeline'))->assertOk()->json('data');
+        $this->assertContains('departure_pass_revoked', array_column($timeline, 'entity_type'));
+        foreach ($timeline as $entry) {
+            $this->assertNotEmpty($entry['actor']['name']);
+        }
+    }
+
+    public function test_pass_blocks_discrepancies_and_detects_changed_load_without_writing_on_get(): void
+    {
+        $this->actingAs($this->tech, 'api');
+        $this->receive('2.000', 'quantity_mismatch')->assertOk();
+        $this->getJson($this->url())->assertOk()->assertJsonPath('data.materials_status', 'has_discrepancies')->assertJsonPath('data.materials_summary.open_discrepancies', 1);
+        $this->actingAs($this->admin, 'api')->postJson('/api/events/'.$this->event->id.'/departure-passes', ['technician_id' => $this->tech->id, 'expires_at' => now()->addHour()->utc()->format('Y-m-d\TH:i:s\Z'), 'dispatches' => [['id' => $this->dispatch, 'version' => 3]]], ['Idempotency-Key' => (string) Str::uuid()])->assertConflict()->assertJsonPath('code', 'DEPARTURE_PASS_BLOCKED');
+        $this->assertDatabaseCount('event_departure_passes', 0);
+        $this->actingAs($this->tech, 'api')->getJson($this->url('/departure-pass'))->assertOk()->assertJsonPath('data.status', 'blocked');
+        InventoryData::update('event_dispatch_items', $this->line, ['quantity' => 4]);
+        $this->getJson($this->url('/departure-pass'))->assertOk()->assertJsonPath('data.status', 'blocked');
+        $this->assertDatabaseCount('event_departure_passes', 0);
+    }
+
+    public function test_serialized_units_are_separate_and_receipt_and_return_require_the_correct_series(): void
+    {
+        $this->event = $this->makeEvent();
+        $this->assign($this->tech, $this->event);
+        $this->product->forceFill(['is_returnable' => true])->save();
+        $this->event->products()->attach($this->product->id, ['quantity' => 3, 'price' => 100]);
+        $this->prepareDispatch(false);
+        $this->actingAs($this->tech, 'api')->getJson($this->url('/dispatch'))->assertOk()->assertJsonPath('dispatches.0.dispatch.status', 'prepared')->assertJsonPath('dispatches.0.dispatch.version', 1);
+        $this->receive()->assertUnprocessable();
+        $identityUrl = '/api/event-dispatches/'.$this->dispatch.'/identity';
+        $this->actingAs($this->admin, 'api')->putJson($identityUrl, ['expected_version' => 1, 'items' => [['dispatch_item_id' => $this->line, 'serial_numbers' => ['SR-001', 'SR-002', 'SR-003']]]], ['Idempotency-Key' => (string) Str::uuid()])->assertOk()->assertJsonCount(3, 'items')->assertJsonPath('dispatch.version', 2);
+        app(EventDispatchService::class)->confirm($this->dispatch, $this->admin->id);
+        $this->actingAs($this->tech, 'api');
+        $snapshot = $this->getJson($this->url('/dispatch'))->assertOk()->assertJsonPath('dispatches.0.dispatch.warehouse_user.display_name', $this->admin->name)->json('dispatches.0');
+        $payload = ['expected_version' => 3, 'items' => array_map(fn ($item) => ['dispatch_item_id' => $item['id'], 'received_quantity' => '1.000', 'status' => 'received', 'serial_number' => $item['serial_number']], $snapshot['items'])];
+        $receiveUrl = '/api/technician/dispatches/'.$this->dispatch.'/receive';
+        $wrong = $payload;
+        $wrong['items'][0]['serial_number'] = 'SERIE-AJENA';
+        $this->postJson($receiveUrl, $wrong, ['Idempotency-Key' => (string) Str::uuid()])->assertUnprocessable();
+        $movements = DB::table('inventory_movements')->count();
+        $this->postJson($receiveUrl, $payload, ['Idempotency-Key' => (string) Str::uuid()])->assertOk()->assertJsonPath('version', 4);
+        $this->getJson($this->url('/dispatch'))->assertOk()->assertJsonPath('dispatches.0.receipt.items.0.serial_number', 'SR-001');
+        $line = ['dispatch_item_id' => $snapshot['items'][0]['id'], 'quantity_consumed' => '0.000', 'quantity_returned' => '0.000', 'quantity_damaged' => '1.000', 'quantity_lost' => '0.000', 'serial_number' => 'WRONG', 'notes' => 'Carcasa dañada'];
+        $data = [...$this->times(), 'dispatch_id' => $this->dispatch, 'expected_revision' => 1, 'items' => [$line]];
+        $this->write('POST', $this->url('/return-declarations'), $data)->assertUnprocessable();
+        $line['serial_number'] = 'SR-001';
+        $this->write('POST', $this->url('/return-declarations'), [...$data, 'items' => [[...$line, 'notes' => ' ']]])->assertUnprocessable();
+        $this->write('POST', $this->url('/return-declarations'), [...$data, 'items' => [$line]])->assertCreated();
+        $this->assertSame($movements, DB::table('inventory_movements')->count());
+        $this->getJson($this->url('/return-declarations'))->assertOk()->assertJsonPath('data.0.items.0.serial_number', 'SR-001')->assertJsonPath('reconciliations.0.items.1.quantity_pending', '1.000');
+        $this->actingAs($this->admin, 'api')->putJson($identityUrl, ['expected_version' => 4, 'items' => [['dispatch_item_id' => $this->line, 'serial_numbers' => ['OTRA']]]])->assertConflict()->assertJsonPath('code', 'DISPATCH_IMMUTABLE');
+        $quarantine = InventoryData::insert('inventory_locations', ['name' => 'Cuarentena', 'code' => 'QUAR', 'type' => 'quarantine']);
+        $warehouseItems = array_map(fn ($item) => ['dispatch_item_id' => $item['id'], 'serial_number' => $item['serial_number'], 'quantity_consumed' => '0.000', 'quantity_returned' => $item['serial_number'] === 'SR-001' ? '0.000' : '1.000', 'quantity_damaged' => $item['serial_number'] === 'SR-001' ? '1.000' : '0.000', 'quantity_lost' => '0.000'], $snapshot['items']);
+        $return = $this->postJson('/api/events/'.$this->event->id.'/returns', ['event_dispatch_id' => $this->dispatch, 'warehouse_location_id' => $this->warehouse, 'damaged_location_id' => $quarantine, 'items' => $warehouseItems])->assertOk()->json('return.id');
+        $key = (string) Str::uuid();
+        $this->postJson('/api/event-returns/'.$return.'/confirm', [], ['Idempotency-Key' => $key])->assertOk();
+        $afterReturn = DB::table('inventory_movements')->count();
+        $this->postJson('/api/event-returns/'.$return.'/confirm', [], ['Idempotency-Key' => $key])->assertOk();
+        $this->assertSame($afterReturn, DB::table('inventory_movements')->count());
+        $this->assertDatabaseHas('inventory_balances', ['product_id' => $this->product->id, 'location_id' => $quarantine, 'quantity' => 1]);
+        $this->assertDatabaseHas('inventory_balances', ['product_id' => $this->product->id, 'location_id' => $this->warehouse, 'quantity' => 6]);
+        $this->actingAs($this->tech, 'api')->getJson($this->url('/return-declarations'))->assertOk()->assertJsonPath('data.0.status', 'warehouse_confirmed')->assertJsonPath('reconciliations.0.items.1.quantity_pending', '0.000')->assertJsonPath('reconciliations.0.items.1.warehouse_quantities.quantity_returned', '1.000');
+    }
+
+    public function test_forty_five_serialized_lines_stay_separate_across_multiple_dispatches_and_pass_covers_all(): void
+    {
+        $this->event = $this->makeEvent();
+        $this->assign($this->tech, $this->event);
+        $this->event->products()->attach($this->product->id, ['quantity' => 45, 'price' => 100]);
+        $secondWarehouse = InventoryData::insert('inventory_locations', ['name' => 'Segundo almacén', 'code' => 'SECOND', 'type' => 'warehouse']);
+        app(InventoryMovementService::class)->record($this->product->id, 13, null, $this->warehouse, 'adjustment_in', $this->admin->id, 'Apertura adicional');
+        app(InventoryMovementService::class)->record($this->product->id, 25, null, $secondWarehouse, 'adjustment_in', $this->admin->id, 'Apertura');
+        app(EventRequirementService::class)->snapshot($this->event, $this->admin->id);
+        $requirement = DB::table('event_requirements')->where('event_id', $this->event->id)->value('id');
+        $pickings = [];
+        foreach ([$this->warehouse => 20, $secondWarehouse => 25] as $location => $quantity) {
+            app(RequirementAllocationService::class)->allocate($this->event->id, $requirement, ['warehouse_location_id' => $location, 'allocations' => [['product_id' => $this->product->id, 'quantity' => $quantity]]], $this->admin);
+            $picking = app(EventPickingService::class)->create($this->event->id, $location, $this->admin->id);
+            foreach ($picking['items'] as $item) {
+                app(EventPickingService::class)->confirm($this->event->id, $picking['picking']['id'], $item->id, (float) $item->quantity_required, $this->admin->id);
+            }
+            app(EventPickingService::class)->complete($this->event->id, $picking['picking']['id'], $this->admin->id);
+            $pickings[] = $picking;
+        }
+        app(EventPreparationService::class)->transition($this->event->id, true, $this->admin->id);
+        foreach ($pickings as $picking) {
+            $dispatch = app(EventDispatchService::class)->create($this->event->id, ['picking_id' => $picking['picking']['id'], 'technician_id' => $this->tech->id], $this->admin->id);
+            $serials = array_map(fn ($number) => 'SR-'.$dispatch['dispatch']['id'].'-'.$number, range(1, (int) $dispatch['items'][0]->quantity));
+            app(EventDispatchService::class)->identify($dispatch['dispatch']['id'], ['expected_version' => 1, 'items' => [['dispatch_item_id' => $dispatch['items'][0]->id, 'serial_numbers' => $serials]]], $this->admin->id);
+            app(EventDispatchService::class)->confirm($dispatch['dispatch']['id'], $this->admin->id);
+        }
+        $this->actingAs($this->tech, 'api');
+        $dispatches = $this->getJson($this->url('/dispatch'))->assertOk()->assertJsonCount(2, 'dispatches')->json('dispatches');
+        $ids = array_merge(array_column($dispatches[0]['items'], 'id'), array_column($dispatches[1]['items'], 'id'));
+        $this->assertCount(45, array_unique($ids));
+        $movementCount = DB::table('inventory_movements')->count();
+        $expected = [];
+        foreach ($dispatches as $dispatch) {
+            $items = array_map(fn ($item) => ['dispatch_item_id' => $item['id'], 'received_quantity' => '1.000', 'status' => 'received', 'serial_number' => $item['serial_number']], $dispatch['items']);
+            $payload = ['expected_version' => $dispatch['dispatch']['version'], 'items' => $items];
+            $wrong = $payload;
+            $wrong['items'][0]['dispatch_item_id'] = $dispatch['dispatch']['id'] === $dispatches[0]['dispatch']['id'] ? $dispatches[1]['items'][0]['id'] : $dispatches[0]['items'][0]['id'];
+            $url = '/api/technician/dispatches/'.$dispatch['dispatch']['id'].'/receive';
+            $this->postJson($url, $wrong, ['Idempotency-Key' => (string) Str::uuid()])->assertUnprocessable();
+            $key = (string) Str::uuid();
+            $this->postJson($url, $payload, ['Idempotency-Key' => $key])->assertOk();
+            $this->postJson($url, $payload, ['Idempotency-Key' => $key])->assertOk();
+            $expected[] = ['id' => $dispatch['dispatch']['id'], 'version' => 4];
+        }
+        $this->assertSame($movementCount, DB::table('inventory_movements')->count());
+        $this->getJson($this->url())->assertOk()->assertJsonPath('data.materials_summary.delivered_lines', 45)->assertJsonPath('data.materials_summary.verified_lines', 45);
+        $this->actingAs($this->admin, 'api');
+        $url = '/api/events/'.$this->event->id.'/departure-passes';
+        $payload = ['technician_id' => $this->tech->id, 'expires_at' => now()->addHour()->utc()->format('Y-m-d\TH:i:s\Z'), 'dispatches' => [$expected[0]]];
+        $this->postJson($url, $payload, ['Idempotency-Key' => (string) Str::uuid()])->assertConflict()->assertJsonPath('code', 'DISPATCH_VERSION_CONFLICT');
+        $this->postJson($url, [...$payload, 'dispatches' => $expected], ['Idempotency-Key' => (string) Str::uuid()])->assertCreated()->assertJsonPath('data.status', 'valid')->assertJsonCount(2, 'data.dispatches');
+        InventoryData::update('event_dispatch_items', $ids[0], ['serial_number' => 'SERIE-CAMBIADA']);
+        $this->actingAs($this->tech, 'api')->getJson($this->url('/departure-pass'))->assertOk()->assertJsonPath('data.status', 'blocked');
+        $this->assertDatabaseCount('event_departure_passes', 1);
+    }
+
+    public function test_an_incident_revokes_an_issued_pass_once_without_changing_inventory(): void
+    {
+        $this->actingAs($this->tech, 'api');
+        $this->receive()->assertOk();
+        $this->actingAs($this->admin, 'api')->postJson('/api/events/'.$this->event->id.'/departure-passes', ['technician_id' => $this->tech->id, 'expires_at' => now()->addHour()->utc()->format('Y-m-d\TH:i:s\Z'), 'dispatches' => [['id' => $this->dispatch, 'version' => 3]]], ['Idempotency-Key' => (string) Str::uuid()])->assertCreated()->assertJsonPath('data.status', 'valid');
+        $movements = DB::table('inventory_movements')->count();
+        $this->actingAs($this->tech, 'api');
+        $payload = [...$this->times(), 'category' => 'damaged_item', 'severity' => 'medium', 'dispatch_item_id' => $this->line, 'description' => 'Daño encontrado después de recibir', 'attachment_ids' => []];
+        $key = (string) Str::uuid();
+        $id = $this->write('POST', $this->url('/incidents'), $payload, $key)->assertCreated()->json('data.id');
+        $this->write('POST', $this->url('/incidents'), $payload, $key)->assertCreated()->assertJsonPath('data.id', $id);
+        $this->getJson($this->url('/departure-pass'))->assertOk()->assertJsonPath('data.status', 'revoked');
+        $this->assertSame(1, DB::table('inventory_audits')->where('action', 'departure_pass_revoked')->count());
+        $this->assertSame($movements, DB::table('inventory_movements')->count());
     }
 
     public function test_override_requires_explicit_supervisor_permission_and_current_assignment(): void

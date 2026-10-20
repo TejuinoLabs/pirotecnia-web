@@ -7,12 +7,12 @@ use Illuminate\Support\Facades\DB;
 
 class AllocationRuleService
 {
-    public function evaluate(Product $product, object $event, object $requirement, array $stock): array
+    public function evaluate(Product $product, object $event, object $requirement, array $stock, ?iterable $loadedRules = null): array
     {
         $score = 0;
         $excluded = false;
         $reasons = [];
-        foreach (DB::table('allocation_rules')->where('active', true)->orderByDesc('priority')->get() as $rule) {
+        foreach ($loadedRules ?? DB::table('allocation_rules')->where('active', true)->orderByDesc('priority')->get() as $rule) {
             $condition = InventoryData::json($rule->condition_json);
             $action = InventoryData::json($rule->action_json);
             if (isset($condition['category_id']) && $condition['category_id'] !== $product->category_id) {

@@ -13,6 +13,11 @@ class EloquentEventRepository implements EventRepositoryInterface
         private EventService $eventService
     ) {}
 
+    public function paginate(int $page, int $perPage = 10): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        return $this->eventService->paginate($page, $perPage);
+    }
+
     public function all(): Collection
     {
         return $this->eventService->all();
@@ -21,6 +26,11 @@ class EloquentEventRepository implements EventRepositoryInterface
     public function getEventsByEmployee(int $employeeId): Collection
     {
         return $this->eventService->getEventsByEmployee($employeeId);
+    }
+
+    public function paginateByEmployee(int $employeeId, int $page, int $perPage = 10): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        return $this->eventService->paginateByEmployee($employeeId, $page, $perPage);
     }
 
     public function find(int $eventId): ?Event

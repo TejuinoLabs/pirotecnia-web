@@ -9,6 +9,9 @@ class InventoryAccess
 {
     public function allows(User $user, string $permission): bool
     {
+        if ($user->status !== 'active') {
+            return false;
+        }
         $roles = $user->roles()->pluck('name')->merge([$user->role?->name])->filter()->all();
         if (array_intersect($roles, ['root', 'admin'])) {
             return true;

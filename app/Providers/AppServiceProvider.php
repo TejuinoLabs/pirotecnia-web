@@ -46,6 +46,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        if (config('performance.enabled')) {
+            \Illuminate\Support\Facades\DB::listen(function (\Illuminate\Database\Events\QueryExecuted $query) {
+                if ($this->app->bound('request')) {
+                    $this->app['request']->attributes->get(\App\Services\Performance\RequestMetrics::class)?->record($query);
+                }
+            });
+        }
     }
 }

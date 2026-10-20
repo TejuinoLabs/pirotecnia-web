@@ -67,7 +67,8 @@ class MobileProtocolService
 
     public function hasClosureBlockers(int $event): bool
     {
-        return DB::table('event_dispatches')->where('event_id', $event)->whereIn('status', ['draft', 'confirmed'])->exists()
+        return app(MobileMaterialsService::class)->hasPendingCustody($event)
+            || DB::table('event_dispatches')->where('event_id', $event)->whereIn('status', ['draft', 'preparing', 'prepared', 'confirmed'])->exists()
             || DB::table('mobile_incidents')->where('event_id', $event)->whereIn('severity', ['high', 'critical'])->where('status', '!=', 'resolved')->exists();
     }
 }

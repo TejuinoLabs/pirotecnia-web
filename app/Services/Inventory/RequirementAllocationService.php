@@ -10,7 +10,7 @@ class RequirementAllocationService
     public function allocate(int $eventId, int $requirementId, array $data, User $actor): array
     {
         return DB::transaction(function () use ($eventId, $requirementId, $data, $actor) {
-            $event = InventoryData::get('events', $eventId, true);
+            $event = InventoryData::activeEvent($eventId);
             InventoryData::assert(in_array($event->logistics_status, ['pending', 'reserved', 'preparing'], true), 'Evento no admite asignaciones.');
             $requirement = InventoryData::get('event_requirements', $requirementId, true);
             abort_unless($requirement->event_id === $eventId, 404);
@@ -54,7 +54,7 @@ class RequirementAllocationService
         return DB::transaction(function () use ($id, $data, $actor) {
             $original = InventoryData::get('requirement_allocations', $id);
             $requirement = InventoryData::get('event_requirements', $original->event_requirement_id);
-            $event = InventoryData::get('events', $requirement->event_id, true);
+            $event = InventoryData::activeEvent($requirement->event_id);
             $allocation = InventoryData::get('requirement_allocations', $id, true);
             InventoryData::assert($allocation->status === 'reserved' && ! DB::table('event_picking_items')->where('requirement_allocation_id', $id)->exists(), 'No se sustituye un surtido iniciado.');
             DB::table('products')->whereIn('id', [$allocation->product_id, $data['product_id']])->orderBy('id')->lockForUpdate()->get();

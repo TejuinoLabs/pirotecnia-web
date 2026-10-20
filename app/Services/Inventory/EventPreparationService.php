@@ -25,13 +25,13 @@ class EventPreparationService
     public function transition(int $eventId, bool $complete, int $actor): array
     {
         return DB::transaction(function () use ($eventId, $complete, $actor) {
-            $event = InventoryData::get('events', $eventId, true);
+            $event = InventoryData::activeEvent($eventId);
             InventoryData::assert(in_array($event->logistics_status, ['pending', 'reserved', 'preparing'], true), 'Estado logístico inválido.');
             if ($complete) {
                 InventoryData::assert(DB::table('event_requirements')->where('event_id', $eventId)->exists(), 'Evento sin requerimientos.');
                 InventoryData::assert(! DB::table('event_requirements')->where('event_id', $eventId)->whereColumn('quantity_allocated', '<', 'quantity_required')->exists(), 'Faltan asignaciones.');
-                $hasPickings = DB::table('event_pickings')->where('event_id', $eventId)->exists();
-                InventoryData::assert($hasPickings && ! DB::table('event_pickings')->where('event_id', $eventId)->where('status', '!=', 'completed')->exists(), 'Picking incompleto.');
+                $hasPickings = DB::table('event_pickings')->where('event_id', $eventId)->where('status', '!=', 'cancelled')->exists();
+                InventoryData::assert($hasPickings && ! DB::table('event_pickings')->where('event_id', $eventId)->whereNotIn('status', ['completed', 'cancelled'])->exists(), 'Picking incompleto.');
             }
             DB::table('event_preparations')->updateOrInsert(['event_id' => $eventId], ['status' => $complete ? 'ready' : 'in_progress', 'responsible_id' => $actor, 'started_at' => now(), 'completed_at' => $complete ? now() : null, 'created_at' => now(), 'updated_at' => now()]);
             InventoryData::update('events', $eventId, ['logistics_status' => $complete ? 'ready' : 'preparing']);

@@ -11,6 +11,11 @@ class EloquentPackageRepository implements PackageRepositoryInterface
 {
     public function __construct(private PackageService $packageService) {}
 
+    public function paginate(int $page, int $perPage = 10): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        return $this->packageService->paginate($page, $perPage);
+    }
+
     public function all(): Collection
     {
         return $this->packageService->all();

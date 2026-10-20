@@ -10,6 +10,7 @@ Route::middleware(['auth:api', 'throttle:120,1'])->prefix('technician')->group(f
     Route::patch('step-records/{record}', [Mobile::class, 'correct'])->whereNumber('record');
     Route::get('events/{event}', [Mobile::class, 'event'])->whereNumber('event');
     Route::get('events/{event}/protocol', [Mobile::class, 'protocol'])->whereNumber('event');
+    Route::get('events/{event}/departure-pass', [Mobile::class, 'departurePass'])->whereNumber('event');
     Route::post('events/{event}/steps/{step}/records', [Mobile::class, 'record'])->whereNumber(['event', 'step']);
     Route::get('events/{event}/timeline', [Mobile::class, 'timeline'])->whereNumber('event');
     Route::get('events/{event}/incidents', [Mobile::class, 'incidents'])->whereNumber('event');

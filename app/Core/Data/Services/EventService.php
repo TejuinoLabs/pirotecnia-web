@@ -9,10 +9,28 @@ use Illuminate\Support\Collection;
 
 class EventService
 {
+    public const RELATIONS = ['typeEvent', 'employees', 'packages.products', 'packages.equipments', 'products', 'equipments'];
+
+    public function paginate(int $page, int $perPage = 10): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        return ModelsEvent::with(self::RELATIONS)->orderByDesc('date')->orderByDesc('id')
+            ->paginate($perPage, ['*'], 'page', max(1, $page))
+            ->through(fn ($event) => Event::fromEvent($event));
+    }
+
+    public function paginateByEmployee(int $employeeId, int $page, int $perPage = 10): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        return ModelsEvent::with(self::RELATIONS)->whereHas('employees', fn ($query) => $query->where('employee_id', $employeeId))
+            ->where('event_date', '>', Carbon::today()->subDays(3))
+            ->orderByDesc('event_date')->orderByDesc('id')
+            ->paginate($perPage, ['*'], 'page', max(1, $page))
+            ->through(fn ($event) => Event::fromEvent($event));
+    }
+
     public function all(): Collection
     {
         try {
-            $eloquentEvents = ModelsEvent::all();
+            $eloquentEvents = ModelsEvent::with(self::RELATIONS)->get();
             $events = $eloquentEvents->map(function ($event) {
                 return Event::fromEvent($event);
             });
@@ -26,7 +44,7 @@ class EventService
     public function getEventsByEmployee(int $employeeId): Collection
     {
         try {
-            $eloquentEvents = ModelsEvent::whereHas('employees', function ($query) use ($employeeId) {
+            $eloquentEvents = ModelsEvent::with(self::RELATIONS)->whereHas('employees', function ($query) use ($employeeId) {
                 $query->where('employee_id', $employeeId);
             })->where('event_date', '>', Carbon::today()->subDays(3))->get();
             $events = $eloquentEvents->map(function ($event) {
@@ -42,7 +60,7 @@ class EventService
     public function find(int $eventId): ?Event
     {
         try {
-            $eloquentEvent = ModelsEvent::findOrFail($eventId);
+            $eloquentEvent = ModelsEvent::with(self::RELATIONS)->findOrFail($eventId);
             $event = Event::fromEvent($eloquentEvent);
 
             return $event;

@@ -39,6 +39,8 @@ Route::middleware(['auth:api'])->group(function () {
     Route::get('/profile', [UserController::class, 'profile']);
     Route::post('/change-password', [UserController::class, 'changePassword']);
     Route::post('/update-profile', [UserController::class, 'updateProfile']);
+    Route::get('/notifications', [\App\Http\Controllers\API\NotificationController::class, 'index']);
+    Route::patch('/notifications/{notification}/read', [\App\Http\Controllers\API\NotificationController::class, 'read'])->whereUuid('notification');
 
     // Settings - Packages
     Route::get('/packages', [PackageController::class, 'index']);
@@ -117,3 +119,4 @@ $registerInventoryRoutes = require __DIR__.'/inventory_api.php';
 $registerInventoryRoutes('auth:api');
 
 require __DIR__.'/mobile_api.php';
+require __DIR__.'/admin_api.php';

@@ -15,6 +15,8 @@ class User extends Authenticatable
 {
     use HasApiTokens,HasFactory, Notifiable;
 
+    protected $attributes = ['status' => 'active'];
+
     /**
      * The attributes that are mass assignable.
      *
@@ -36,6 +38,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'fcm_token',
     ];
 
     /**

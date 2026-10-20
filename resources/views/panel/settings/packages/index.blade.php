@@ -252,8 +252,7 @@
                             </p>
                             <h3 class="mt-3 text-2xl font-bold text-on-primary">Configuraciones registradas</h3>
                             <p class="mt-2 text-sm text-primary-200">
-                                La tabla ahora conserva ancho útil y hace scroll horizontal controlado cuando el espacio no
-                                alcanza.
+                                Busca paquetes por nombre, código, descripción o nivel operativo.
                             </p>
                         </div>
                         <div
@@ -263,13 +262,26 @@
                         </div>
                     </div>
 
-                    @if ($packageRows->isEmpty())
+                    <form method="GET" action="{{ route('settings.packages.index') }}" class="flex flex-wrap items-end gap-3 border-b border-border px-6 py-4">
+                        <div class="min-w-0 flex-1">
+                            <label for="package-search" class="mb-2 block text-sm font-semibold text-primary-200">Buscar paquetes</label>
+                            <input id="package-search" type="search" name="search" value="{{ $search }}"
+                                placeholder="Nombre, código, descripción o nivel"
+                                class="w-full rounded-xl border border-primary-600 bg-primary-700 px-4 py-3 text-on-primary placeholder:text-primary-200">
+                        </div>
+                        <button type="submit" class="rounded-xl bg-secondary px-5 py-3 text-sm font-bold text-on-secondary">Buscar</button>
+                        @if ($search !== '')
+                            <a href="{{ route('settings.packages.index') }}" class="rounded-xl border border-primary-600 px-5 py-3 text-sm text-primary-200">Limpiar</a>
+                        @endif
+                    </form>
+
+                    @if ($listRows->isEmpty())
                         <div class="p-10">
                             <div class="rounded-3xl border border-border bg-surface-alt p-8 text-center">
                                 <span class="material-symbols-outlined text-5xl text-primary-300">inventory_2</span>
-                                <p class="mt-4 text-lg font-bold text-on-surface">Sin paquetes registrados</p>
+                                <p class="mt-4 text-lg font-bold text-on-surface">{{ $search !== '' ? 'No se encontraron paquetes' : 'Sin paquetes registrados' }}</p>
                                 <p class="mt-2 text-sm text-muted">
-                                    Crea el primer paquete para comenzar a gestionar el catálogo comercial.
+                                    {{ $search !== '' ? 'Prueba con otro término o limpia la búsqueda.' : 'Crea el primer paquete para comenzar a gestionar el catálogo comercial.' }}
                                 </p>
                                 <a href="{{ route('packages.create') }}"
                                     class="mt-6 inline-flex items-center gap-2 rounded-2xl bg-secondary px-5 py-3 text-sm font-bold text-on-secondary transition-colors hover:bg-secondary-600">
@@ -307,9 +319,6 @@
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-border">
-                                    @php
-                                        $listRows = \App\Support\PanelPagination::collection($packageRows);
-                                    @endphp
                                     @foreach ($listRows as $package)
                                         @php
                                             $status = $statusMeta($package);
@@ -403,26 +412,8 @@
                             </table>
                         </div>
 
-                        <div
-                            class="flex items-center justify-between border-t border-primary-800 bg-primary-800 px-6 py-4">
-                            <p class="text-xs font-medium text-primary-200">Mostrando {{ ($listRows ?? \App\Support\PanelPagination::collection($packageRows))->count() }} de {{ $packageRows->count() }} paquetes
-                                registrados.</p>
-                            <div class="flex gap-1">
-                                <button
-                                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-on-surface transition-colors hover:bg-background">
-                                    <span class="material-symbols-outlined text-sm">chevron_left</span>
-                                </button>
-                                <button
-                                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-sm font-bold text-on-primary">1</button>
-                                <button
-                                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-sm font-bold text-on-surface transition-colors hover:bg-background">2</button>
-                                <button
-                                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-on-surface transition-colors hover:bg-background">
-                                    <span class="material-symbols-outlined text-sm">chevron_right</span>
-                                </button>
-                            </div>
-                        </div>
                     @endif
+                    <x-panel.pagination :paginator="$listRows" />
                 </section>
             </div>
 
@@ -555,7 +546,6 @@
             </aside>
         </div>
     </div>
-    <x-panel.pagination :paginator="$listRows ?? \App\Support\PanelPagination::collection($packageRows)" />
 @endsection
 
 @section('extra-script')

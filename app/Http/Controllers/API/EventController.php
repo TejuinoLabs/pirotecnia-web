@@ -12,7 +12,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Events\StoreEventRequest;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class EventController extends Controller
 {
@@ -20,6 +19,8 @@ class EventController extends Controller
 
     public function index(Request $request)
     {
+        app(\App\Services\Admin\AdminAccess::class)->authorize($request->user());
+        $request->validate(['page' => ['sometimes', 'integer', 'min:1']]);
         $events = app(GetAllEvents::class)->execute($request->get('page', 1));
 
         return response()->success($events, 200);
@@ -27,11 +28,18 @@ class EventController extends Controller
 
     public function getEventsByEmployee(Request $request)
     {
+        abort_unless($request->user()->status === 'active', 403);
+        if ($request->user()->employee && $request->user()->employee->status !== 'active') {
+            return response()->success(collect(['total' => 0, 'total_pages' => 1, 'current_page' => max(1, (int) $request->input('page', 1)), 'per_page' => 10, 'events' => []]), 200);
+        }
         if (! $request->user()->employee) {
             return response()->success(collect(['total' => 0, 'total_pages' => 1, 'current_page' => max(1, (int) $request->input('page', 1)), 'per_page' => 10, 'events' => []]), 200);
         }
         $id = $request->user()->employee->id;
         $events = app(GetEventsByEmployee::class)->execute($id, $request->get('page', 1));
+        $events['events'] = collect($events['events'])->map(function ($event) use ($request) {
+            return (array) $event + ['materials_status' => app(\App\Services\Mobile\MobileMaterialsService::class)->summary($event->id, $request->user())['materials_status']];
+        });
 
         return response()->success($events, 200);
     }
@@ -50,16 +58,17 @@ class EventController extends Controller
         \App\Services\Inventory\InventoryData::get('events', $id);
         $event = app(GetEvent::class)->execute($id);
         abort_unless($event, 404);
-        $pdf = $this->generatePdf($event);
-        $fileName = 'event_'.$event->id.'.pdf';
-        Storage::disk('public')->put('pdf/'.$fileName, $pdf);
-        $url = asset('storage/pdf/'.$fileName);
-        $event->pdf_url = $url;
+        $this->preparePdfData($event);
+        $html = view('whatsapp.event_details_pdf_view_api', compact('event'))->render();
+        $fingerprint = hash('sha256', $html);
+        $event->pdf_url = app(\App\Services\Performance\EventPdfCache::class)->store(
+            $event->id, $fingerprint, fn () => Pdf::loadHTML($html)->output()
+        );
 
         return response()->success($event, 200);
     }
 
-    private function generatePdf($event)
+    private function preparePdfData($event): void
     {
         if ($event) {
             $price = (float) $event->price > 0 ? (float) $event->price : (float) $event->packages->sum('price');
@@ -74,10 +83,6 @@ class EventController extends Controller
                 $event->balance = ($price - ($price * $event->discount)) - $event->advance + $event->travel_expenses;
             }
         }
-
-        $pdf = Pdf::loadView('whatsapp.event_details_pdf_view_api', compact('event'));
-
-        return $pdf->output();
     }
 
     public function store(StoreEventRequest $request)

@@ -8,7 +8,7 @@ use App\Models\Event as ModelsEvent;
 
 class EloquentDashboard implements DashboardRepository {
     public function dashboard(): array {
-        $events = ModelsEvent::all();
+        $events = ModelsEvent::with(['typeEvent', 'employees.experienceLevel', 'packages.experienceLevel', 'packages.products.productRole', 'packages.equipments', 'products.productRole', 'equipments'])->get();
         
         return array_map(fn($event) => EventMapper::fromModel($event),$events->all());
     }

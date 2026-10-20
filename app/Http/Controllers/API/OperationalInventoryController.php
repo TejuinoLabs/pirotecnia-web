@@ -31,12 +31,19 @@ class OperationalInventoryController extends Controller
 {
     public function products(Request $request)
     {
-        return Product::query()->when($request->filled('category_id'), fn ($q) => $q->where('category_id', $request->integer('category_id')))->paginate(15)->withQueryString();
+        $request->validate(['page' => ['sometimes', 'integer', 'min:1'], 'category_id' => ['nullable', 'integer']]);
+
+        return Product::query()->when($request->filled('category_id'), fn ($q) => $q->where('category_id', $request->integer('category_id')))->orderBy('id')->paginate(15)->withQueryString()->through(function ($product) {
+            $data = $product->toArray();
+            $data['image_url'] = app(\App\Services\Admin\AdminMediaService::class)->present($product->image_url);
+
+            return $data;
+        });
     }
 
     public function dashboard()
     {
-        return app(\App\Services\Inventory\InventoryDashboardService::class)->summary();
+        return app(\App\Services\Inventory\InventoryDashboardAggregates::class)->summary();
     }
 
     public function audits()
@@ -74,7 +81,10 @@ class OperationalInventoryController extends Controller
                 }
             }
         }
-        $products->setCollection($products->getCollection()->map(fn ($p) => $p->toArray() + app(InventoryAvailabilityService::class)->stock($p, $data['location_id'] ?? null, null, null, $demand, $area)));
+        $catalog = $products->getCollection();
+        app(ProductMatcherService::class)->loadAttributes($catalog);
+        $context = app(InventoryAvailabilityService::class)->context($data['location_id'] ?? null, null, $area, $catalog->pluck('id'));
+        $products->setCollection($catalog->map(fn ($p) => $p->attributesToArray() + app(InventoryAvailabilityService::class)->stock($p, $data['location_id'] ?? null, null, null, $demand, $area, $context)));
 
         return $products;
     }
@@ -95,10 +105,10 @@ class OperationalInventoryController extends Controller
             $query->where(fn ($q) => $q->where('from_location_id', $data['location_id'])->orWhere('to_location_id', $data['location_id']));
         }
         if (isset($data['date_from'])) {
-            $query->whereDate('occurred_at', '>=', $data['date_from']);
+            $query->where('occurred_at', '>=', $data['date_from'].' 00:00:00');
         }
         if (isset($data['date_to'])) {
-            $query->whereDate('occurred_at', '<=', $data['date_to']);
+            $query->where('occurred_at', '<', \Carbon\CarbonImmutable::parse($data['date_to'])->addDay()->startOfDay()->toDateTimeString());
         }
         if (isset($data['event_id'])) {
             $query->where(fn ($q) => $q->where(fn ($q) => $q->where('source_type', 'event_dispatch')->whereIn('source_id', DB::table('event_dispatches')->where('event_id', $data['event_id'])->select('id')))->orWhere(fn ($q) => $q->where('source_type', 'event_return')->whereIn('source_id', DB::table('event_returns')->where('event_id', $data['event_id'])->select('id'))));
@@ -138,7 +148,15 @@ class OperationalInventoryController extends Controller
     public function adjustment(Request $request)
     {
         $data = $request->validate(['product_id' => ['required', 'integer', 'exists:products,id'], 'location_id' => ['required', 'integer', 'exists:inventory_locations,id'], 'quantity' => ['required', 'numeric', 'gt:0', 'decimal:0,3'], 'direction' => ['required', 'in:in,out'], 'notes' => ['required', 'string', 'max:2000']]);
-        $id = app(InventoryMovementService::class)->record($data['product_id'], (float) $data['quantity'], $data['direction'] === 'out' ? $data['location_id'] : null, $data['direction'] === 'in' ? $data['location_id'] : null, 'adjustment_'.$data['direction'], $request->user()->id, $data['notes']);
+        $id = DB::transaction(function () use ($data, $request) {
+            $product = Product::whereKey($data['product_id'])->lockForUpdate()->firstOrFail();
+            if ($data['direction'] === 'out') {
+                $stock = app(InventoryAvailabilityService::class)->stock($product, $data['location_id']);
+                InventoryData::assert((float) $data['quantity'] <= $stock['available_stock'], 'El ajuste excede las existencias disponibles.', 'INVENTORY_STOCK_INSUFFICIENT');
+            }
+
+            return app(InventoryMovementService::class)->record($data['product_id'], (float) $data['quantity'], $data['direction'] === 'out' ? $data['location_id'] : null, $data['direction'] === 'in' ? $data['location_id'] : null, 'adjustment_'.$data['direction'], $request->user()->id, $data['notes']);
+        });
 
         return response()->json(['movement_id' => $id], 201);
     }
@@ -166,6 +184,27 @@ class OperationalInventoryController extends Controller
     public function purchase(int $purchase)
     {
         return app(PurchaseReceiptService::class)->show($purchase);
+    }
+
+    public function previewPurchaseDocument(Request $request)
+    {
+        $request->validate(['document' => ['required', 'file', 'mimes:pdf', 'max:5120']]);
+
+        return app(\App\Services\Purchases\PurchaseDocumentImportService::class)->preview($request->file('document'), $request->user()->id);
+    }
+
+    public function createPurchaseDocumentProduct(Request $request)
+    {
+        $request->validate(['token' => ['required', 'uuid']]);
+
+        return response()->json(app(\App\Services\Purchases\PurchaseDocumentImportService::class)->createProduct($request->input('token'), $request->all(), $request->user()->id), 201);
+    }
+
+    public function importPurchaseDocument(Request $request)
+    {
+        $request->validate(['token' => ['required', 'uuid']]);
+
+        return response()->json(app(\App\Services\Purchases\PurchaseDocumentImportService::class)->register($request->input('token'), $request->all(), $request->user()), 201);
     }
 
     public function createPurchase(Request $request)
@@ -205,7 +244,7 @@ class OperationalInventoryController extends Controller
 
     public function package(int $package)
     {
-        return ['package' => Package::with(['materials', 'equipments'])->findOrFail($package)->toArray(), 'requirements' => DB::table('package_requirements')->where('package_id', $package)->get()->map(fn ($r) => (array) $r + ['constraints' => app(PackageRequirementService::class)->constraints('package_requirement', $r->id)])->all()];
+        return app(\App\Services\Admin\AdminPackageService::class)->show($package);
     }
 
     public function packages()
@@ -238,12 +277,15 @@ class OperationalInventoryController extends Controller
     public function createEvent(Request $request)
     {
         $data = $request->validate(['event_type_id' => ['nullable', 'integer', 'exists:event_types,id'], 'date' => ['required', 'date'], 'event_date' => ['required', 'date'], 'phone' => ['required', 'string', 'max:255'], 'client_name' => ['required', 'string', 'max:255'], 'client_address' => ['nullable', 'string'], 'event_address' => ['required', 'string'], 'notes' => ['nullable', 'string'], 'package_id' => ['required', 'integer', 'exists:packages,id'], 'package_quantity' => ['integer', 'min:1']]);
+        $data['date'] = \Carbon\CarbonImmutable::parse($data['date'], config('mobile.event_timezone'))->toDateString();
+        $data['event_date'] = \Carbon\CarbonImmutable::parse($data['event_date'], config('mobile.event_timezone'))->setTimezone(config('mobile.event_timezone'))->toDateTimeString();
 
         return DB::transaction(function () use ($data, $request) {
             $quantity = $data['package_quantity'] ?? 1;
             unset($data['package_quantity']);
             $event = Event::create($data);
             $package = Package::findOrFail($data['package_id']);
+            abort_unless($package->status !== 'inactive', 422, 'El paquete está archivado.');
             $event->packages()->attach($package->id, ['quantity' => $quantity, 'price' => $package->price]);
             foreach ($package->materials as $product) {
                 $event->products()->attach($product->id, ['quantity' => $product->pivot->quantity * $quantity, 'price' => $product->pivot->price ?? 0]);
@@ -360,6 +402,15 @@ class OperationalInventoryController extends Controller
         return $this->idempotent($request, 'dispatch:'.$dispatch.':confirm', [], fn () => app(EventDispatchService::class)->confirm($dispatch, $request->user()->id));
     }
 
+    public function identifyDispatch(Request $request, int $dispatch)
+    {
+        $data = $request->validate(['expected_version' => ['present', 'nullable', 'integer', 'min:1'], 'items' => ['required', 'array', 'min:1', 'max:500'],
+            'items.*' => ['array:dispatch_item_id,serial_numbers'], 'items.*.dispatch_item_id' => ['required', 'integer', 'distinct'],
+            'items.*.serial_numbers' => ['required', 'array', 'min:1', 'max:500'], 'items.*.serial_numbers.*' => ['required', 'string', 'max:255', 'distinct']]);
+
+        return $this->idempotent($request, 'dispatch:'.$dispatch.':identify', $data, fn () => app(EventDispatchService::class)->identify($dispatch, $data, $request->user()->id));
+    }
+
     public function technicianDispatch(Request $request, int $event)
     {
         return app(\App\Services\Mobile\MobileDispatchService::class)->forEvent($event, $request->user());
@@ -367,16 +418,26 @@ class OperationalInventoryController extends Controller
 
     public function receiveTechnician(Request $request, int $dispatch)
     {
-        app(\App\Services\Mobile\MobileDispatchService::class)->owned($dispatch, $request->user());
+        $owned = app(\App\Services\Mobile\MobileDispatchService::class)->owned($dispatch, $request->user());
         app(\App\Services\Inventory\InventoryAccess::class)->authorize($request->user(), 'mobile.receive');
-        $data = $request->validate(['items' => ['required', 'array', 'min:1'], 'items.*.dispatch_item_id' => ['required', 'integer', 'distinct'], 'items.*' => ['array:dispatch_item_id,received_quantity,status,notes'], 'items.*.received_quantity' => ['required', 'numeric', 'min:0', 'decimal:0,3'], 'items.*.status' => ['required', 'in:received,missing,damaged,quantity_mismatch'], 'items.*.notes' => ['nullable', 'string', 'max:2000'], 'notes' => ['nullable', 'string', 'max:2000'], 'device_info' => ['nullable', 'string', 'max:2000']]);
-
-        return $this->idempotent($request, 'technician:'.$dispatch.':receive', $data, fn () => app(TechnicianReceiptService::class)->receive($dispatch, $data, $request->user()->id));
+        if ($owned->version !== null) {
+            \Illuminate\Support\Facades\Validator::make(['key' => $request->header('Idempotency-Key')], ['key' => ['required', 'string', 'max:100']])->validate();
+            $request->validate(['items.*.received_quantity' => \App\Services\Mobile\MobileContract::quantityRule()]);
+        }
+        $data = $request->validate(['expected_version' => ['sometimes', 'integer', 'min:1'], 'items' => ['required', 'array', 'min:1', 'max:500'], 'items.*.dispatch_item_id' => ['required', 'integer', 'distinct'], 'items.*' => ['array:dispatch_item_id,received_quantity,status,notes,serial_number'], 'items.*.serial_number' => ['nullable', 'string', 'max:255'], 'items.*.received_quantity' => ['required', 'numeric', 'min:0', 'decimal:0,3'], 'items.*.status' => ['required', 'in:received,missing,damaged,quantity_mismatch'], 'items.*.notes' => ['nullable', 'string', 'max:2000'], 'notes' => ['nullable', 'string', 'max:2000'], 'device_info' => ['nullable', 'string', 'max:2000']]);
+        try {
+            return $this->idempotent($request, 'technician:'.$dispatch.':receive', $data, fn () => app(TechnicianReceiptService::class)->receive($dispatch, $data, $request->user()->id));
+        } catch (\App\Services\Inventory\InventoryException $e) {
+            if ($e->errorCode === 'IDEMPOTENCY_KEY_CONFLICT') {
+                throw new \App\Services\Inventory\InventoryException($e->getMessage(), $e->errorCode, $e->errors, 409);
+            }
+            throw $e;
+        }
     }
 
     public function createReturn(Request $request, int $event)
     {
-        $rules = ['event_dispatch_id' => ['required', 'integer', 'exists:event_dispatches,id'], 'warehouse_location_id' => ['required', 'integer', 'exists:inventory_locations,id'], 'damaged_location_id' => ['nullable', 'integer', 'exists:inventory_locations,id'], 'returned_by' => ['nullable', 'integer', 'exists:users,id'], 'notes' => ['nullable', 'string', 'max:2000'], 'items' => ['required', 'array', 'min:1'], 'items.*.dispatch_item_id' => ['required', 'integer', 'distinct'], 'items.*' => ['array:dispatch_item_id,quantity_consumed,quantity_returned,quantity_damaged,quantity_lost,notes'], 'items.*.notes' => ['nullable', 'string', 'max:2000']];
+        $rules = ['event_dispatch_id' => ['required', 'integer', 'exists:event_dispatches,id'], 'warehouse_location_id' => ['required', 'integer', 'exists:inventory_locations,id'], 'damaged_location_id' => ['nullable', 'integer', 'exists:inventory_locations,id'], 'returned_by' => ['nullable', 'integer', 'exists:users,id'], 'notes' => ['nullable', 'string', 'max:2000'], 'items' => ['required', 'array', 'min:1'], 'items.*.dispatch_item_id' => ['required', 'integer', 'distinct'], 'items.*' => ['array:dispatch_item_id,quantity_consumed,quantity_returned,quantity_damaged,quantity_lost,notes,serial_number'], 'items.*.serial_number' => ['nullable', 'string', 'max:255'], 'items.*.notes' => ['nullable', 'string', 'max:2000']];
         foreach (['consumed', 'returned', 'damaged', 'lost'] as $field) {
             $rules['items.*.quantity_'.$field] = ['required', 'numeric', 'min:0', 'decimal:0,3'];
         }

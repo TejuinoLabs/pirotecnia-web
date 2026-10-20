@@ -637,7 +637,7 @@
                                         for="employee_id_{{ $i }}">Encargado {{ $i + 1 }}</label>
                                     <select class="{{ $inputClass }} appearance-none"
                                         id="employee_id_{{ $i }}"
-                                        wire:model="employee_id.{{ $i }}">
+                                        wire:model.live="employee_id.{{ $i }}">
                                         <option value="">Seleccione un encargado</option>
                                         @foreach ($employees as $employee)
                                             <option value="{{ $employee->id }}">{{ $employee->name }}</option>
@@ -646,6 +646,22 @@
                                     @error('employee_id')
                                         <p class="{{ $errorClass }}">{{ $message }}</p>
                                     @enderror
+                                    @php
+                                        $selectedEmployee = $employees->firstWhere('id', $employee_id[$i] ?? null);
+                                    @endphp
+                                    @if ($selectedEmployee)
+                                        <div class="space-y-2 pt-3" wire:key="employee-salary-{{ $i }}-{{ $selectedEmployee->id }}">
+                                            <label class="{{ $labelClass }}" for="employee_salary_{{ $i }}">Sueldo para este evento</label>
+                                            <input class="{{ $inputClass }}" id="employee_salary_{{ $i }}"
+                                                type="number" min="0" max="9999999999.99" step="0.01"
+                                                placeholder="{{ $selectedEmployee->salary }}"
+                                                wire:model="employeeSalaries.{{ $selectedEmployee->id }}">
+                                            <p class="text-xs text-primary-200">Déjalo vacío para usar el sueldo habitual: ${{ number_format((float) $selectedEmployee->salary, 2) }}. El ajuste aplica solo a este evento.</p>
+                                            @error('employeeSalaries.' . $selectedEmployee->id)
+                                                <p class="{{ $errorClass }}">{{ $message }}</p>
+                                            @enderror
+                                        </div>
+                                    @endif
                                 </div>
 
                                 <div class="flex flex-wrap gap-3 lg:justify-end">
